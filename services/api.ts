@@ -1,10 +1,9 @@
 import { clearTokens, getAccessToken, getRefreshToken, saveTokens } from './storage';
 
-// ⚠️ Point this at your Django server.
-//  - Real phone (Expo Go) on same wifi → your PC's LAN IP.
-//  - Android emulator → http://10.0.2.2:8000/api
-//  - iOS simulator    → http://localhost:8000/api
-export const BASE_URL = 'http://192.168.1.11:8000/api';
+// Hosted Django backend on Render (works from any network).
+// For local dev against your own machine, swap to your LAN IP, e.g.
+//   'http://192.168.1.11:8000/api'
+export const BASE_URL = 'https://daily-tracker-api-pzxf.onrender.com/api';
 
 async function authHeaders(): Promise<Record<string, string>> {
   const token = await getAccessToken();
