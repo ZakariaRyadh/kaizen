@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Icon } from '../../components/Icon';
 import { Note, NoteSheet } from '../../components/NoteSheet';
+import { useRefresh } from '../../hooks/useRefresh';
 import { useNotes } from '../../store/notes';
 import { useAccent, withAlpha } from '../../theme/AccentContext';
 import { colors, fonts } from '../../theme/colors';
@@ -16,6 +17,8 @@ export default function Notes() {
   const [filter, setFilter] = useState('All');
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<Note | null>(null);
+
+  const { refreshing, onRefresh } = useRefresh([useNotes.getState().load]);
 
   const tags = useMemo(() => ['All', ...Array.from(new Set(notes.map((n) => n.tag)))], [notes]);
 
@@ -36,7 +39,11 @@ export default function Notes() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.canvas }} edges={['top']}>
-      <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 28, gap: 18 }} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={{ padding: 20, paddingBottom: 28, gap: 18 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accent} />}
+      >
         {/* header */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 6 }}>
           <View>

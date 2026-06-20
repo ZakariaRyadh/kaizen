@@ -27,7 +27,7 @@ export default function Login() {
   };
 
   return (
-    <AuthShell kicker="Welcome back" title="Daily Tracker" subtitle="Sign in to sync your tasks, workouts and notes across devices.">
+    <AuthShell kicker="Welcome back" title="Kaizen" subtitle="Sign in to sync your tasks, workouts and notes across devices.">
       <AuthField label="Email" icon="mail" value={email} onChangeText={setEmail} placeholder="you@example.com" keyboardType="email-address" />
       <AuthField label="Password" icon="lock" value={password} onChangeText={setPassword} placeholder="Your password" secure />
       <AuthError message={error} />

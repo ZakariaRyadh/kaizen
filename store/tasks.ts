@@ -15,6 +15,13 @@ export const TODAY = `${YEAR}-${_pad(MONTH + 1)}-${_pad(TODAY_DAY)}`;
 // 'YYYY-MM-DD' for a day number in the current month (used by Calendar).
 export const dateOf = (day: number) => `${YEAR}-${_pad(MONTH + 1)}-${_pad(day)}`;
 
+// ---- generic calendar helpers (any month/year) ----
+export const iso = (year: number, month: number, day: number) => `${year}-${_pad(month + 1)}-${_pad(day)}`;
+export const daysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
+export const firstDow = (year: number, month: number) => new Date(year, month, 1).getDay(); // 0=Sun
+export const monthName = (month: number) =>
+  new Date(2000, month, 1).toLocaleString('default', { month: 'long' });
+
 // map between mobile Task and the Django Task JSON
 const toApi = (t: Task) => ({
   title: t.title,

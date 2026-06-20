@@ -1,4 +1,4 @@
-// Design tokens — pulled straight from the Daily Tracker design.
+// Design tokens — pulled straight from the Kaizen design.
 // Canvas + card colors are fixed; the accent is swappable at runtime
 // (see AccentContext), so it lives in state, not here.
 

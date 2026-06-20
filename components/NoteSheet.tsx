@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Dimensions, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Pressable, Text, TextInput, View } from 'react-native';
 
 import { SwipeSheet } from './SwipeSheet';
 import { useAccent, withAlpha } from '../theme/AccentContext';
 import { colors, fonts } from '../theme/colors';
 import { TAG_COLORS, TAG_PRESETS } from '../theme/tags';
-
-const SHEET_BODY = Dimensions.get('window').height * 0.66;
 
 export type Note = {
   id: string;
@@ -59,7 +57,7 @@ export function NoteSheet({ visible, initial, onClose, onSave, onDelete }: Props
   };
 
   return (
-    <SwipeSheet visible={visible} onClose={onClose}>
+    <SwipeSheet visible={visible} onClose={onClose} scroll>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
             <Text style={{ fontSize: 19, color: colors.text, fontFamily: fonts.uiBold }}>{initial ? 'Edit note' : 'New note'}</Text>
             <Pressable onPress={() => setPinned((p) => !p)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, backgroundColor: pinned ? withAlpha(accent, 16) : colors.card, borderWidth: 1, borderColor: pinned ? accent : colors.border }}>
@@ -67,7 +65,6 @@ export function NoteSheet({ visible, initial, onClose, onSave, onDelete }: Props
             </Pressable>
           </View>
 
-          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ maxHeight: SHEET_BODY }}>
             <TextInput value={title} onChangeText={setTitle} placeholder="Title" placeholderTextColor={colors.textFaint} style={[input, { fontFamily: fonts.uiSemi, fontSize: 17 }]} />
             <TextInput value={body} onChangeText={setBody} placeholder="Write your note… (markdown ok)" placeholderTextColor={colors.textFaint} multiline style={[input, { marginTop: 12, minHeight: 120, textAlignVertical: 'top' }]} />
 
@@ -105,7 +102,6 @@ export function NoteSheet({ visible, initial, onClose, onSave, onDelete }: Props
                 <Text style={{ color: colors.red, fontFamily: fonts.uiSemi, fontSize: 14 }}>Delete note</Text>
               </Pressable>
             )}
-          </ScrollView>
     </SwipeSheet>
   );
 }

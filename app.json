@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "Daily Tracker",
-    "slug": "daily-tracker",
-    "scheme": "dailytracker",
+    "name": "Kaizen",
+    "slug": "kaizen",
+    "scheme": "kaizen",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -23,7 +23,21 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "expo-audio",
+      [
+        "expo-media-library",
+        {
+          "musicLibraryPermission": "Allow Kaizen to access your music to import workout tracks."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Kaizen to access your photos to set a profile picture."
+        }
+      ],
+      "expo-notifications"
     ]
   }
 }

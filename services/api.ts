@@ -1,9 +1,20 @@
+import Constants from 'expo-constants';
+
 import { clearTokens, getAccessToken, getRefreshToken, saveTokens } from './storage';
 
-// Hosted Django backend on Render (works from any network).
-// For local dev against your own machine, swap to your LAN IP, e.g.
-//   'http://192.168.1.11:8000/api'
-export const BASE_URL = 'https://daily-tracker-api-pzxf.onrender.com/api';
+// Deployed backend (used by real/production builds).
+const PROD_URL = 'https://daily-tracker-api-pzxf.onrender.com/api';
+
+// In Expo dev, talk to your LOCAL Django server. We read the dev machine's IP
+// from Metro's host URI, so it works on any wifi without hardcoding an IP.
+// (Local server: `python manage.py runserver 0.0.0.0:8000`)
+function devUrl(): string {
+  const host = Constants.expoConfig?.hostUri?.split(':')[0];
+  return host ? `http://${host}:8000/api` : PROD_URL;
+}
+
+// __DEV__ is true under `expo start`, false in a production build → auto-switch.
+export const BASE_URL = __DEV__ ? devUrl() : PROD_URL;
 
 async function authHeaders(): Promise<Record<string, string>> {
   const token = await getAccessToken();
@@ -72,7 +83,18 @@ export const requestOTP = (email: string) =>
 export const verifyOTP = (email: string, code: string, new_password: string) =>
   request<{ message: string }>('POST', '/auth/verify-otp/', { email, code, new_password }, false);
 
-export const getMe = () => request<{ id: number; email: string; display_name: string }>('GET', '/auth/me/');
+type MeResponse = { id: number; email: string; display_name: string; avatar?: string };
+
+export const getMe = () => request<MeResponse>('GET', '/auth/me/');
+
+export const updateMe = (display_name: string) =>
+  request<MeResponse>('PATCH', '/auth/me/', { display_name });
+
+export const updateAvatar = (avatar: string) =>
+  request<MeResponse>('PATCH', '/auth/me/', { avatar });
+
+export const changePassword = (current_password: string, new_password: string) =>
+  request<{ message: string }>('POST', '/auth/change-password/', { current_password, new_password });
 
 // ── generic CRUD (used later to sync tasks/notes/etc) ──
 export const apiGet = <T>(path: string) => request<T>('GET', path);

@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Dimensions, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Pressable, Text, TextInput, View } from 'react-native';
 
 import { SwipeSheet } from './SwipeSheet';
 import { useAccent, withAlpha } from '../theme/AccentContext';
 import { colors, fonts } from '../theme/colors';
 import { REPEATS, RepeatKey, TAG_COLORS, TAG_PRESETS, Task } from '../theme/tags';
-
-const SHEET_BODY = Dimensions.get('window').height * 0.66;
 
 type Props = {
   visible: boolean;
@@ -51,12 +49,11 @@ export function TaskSheet({ visible, initial, defaultDate, onClose, onSave, onDe
   };
 
   return (
-    <SwipeSheet visible={visible} onClose={onClose}>
+    <SwipeSheet visible={visible} onClose={onClose} scroll>
       <Text style={{ fontSize: 19, color: colors.text, fontFamily: fonts.uiBold, marginBottom: 16 }}>
         {initial ? 'Edit task' : 'New task'}
       </Text>
 
-      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ maxHeight: SHEET_BODY }}>
             <Field label="Title">
               <TextInput
                 value={title}
@@ -182,7 +179,6 @@ export function TaskSheet({ visible, initial, defaultDate, onClose, onSave, onDe
                 <Text style={{ color: colors.red, fontFamily: fonts.uiSemi, fontSize: 14 }}>Delete task</Text>
               </Pressable>
             )}
-          </ScrollView>
     </SwipeSheet>
   );
 }

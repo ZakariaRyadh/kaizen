@@ -1,79 +1,110 @@
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CalEvent, EventSheet, PRIORITY_META, Priority } from '../../components/EventSheet';
 import { Icon } from '../../components/Icon';
 import { TaskSheet } from '../../components/TaskSheet';
+import { useRefresh } from '../../hooks/useRefresh';
 import { useEvents } from '../../store/events';
-import { dateOf, MONTH, MONTH_NAME, TODAY, TODAY_DAY, useTasks, YEAR } from '../../store/tasks';
+import { daysInMonth, firstDow, iso, MONTH, monthName, TODAY, TODAY_DAY, useTasks, YEAR } from '../../store/tasks';
 import { useAccent, withAlpha } from '../../theme/AccentContext';
 import { colors, fonts } from '../../theme/colors';
 import { Task } from '../../theme/tags';
 
-// current-month facts (computed from the real date)
-const DAYS_IN_MONTH = new Date(YEAR, MONTH + 1, 0).getDate();
-const FIRST_DOW = new Date(YEAR, MONTH, 1).getDay(); // 0=Sun
 const DOW = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 export default function Calendar() {
   const { accent } = useAccent();
   const [mode, setMode] = useState<'week' | 'month'>('week');
-  const [selected, setSelected] = useState(TODAY_DAY);
+
+  // which month is on screen + which date is selected (full ISO date)
+  const [viewYear, setViewYear] = useState(YEAR);
+  const [viewMonth, setViewMonth] = useState(MONTH); // 0-indexed
+  const [selected, setSelected] = useState(TODAY);   // 'YYYY-MM-DD'
+
   const events = useEvents((s) => s.events);
   const { upsert, remove } = useEvents();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<CalEvent | null>(null);
 
-  // shared tasks (same store Home reads) — tasks added here on TODAY show on Home
+  const { refreshing, onRefresh } = useRefresh([useEvents.getState().load, useTasks.getState().load]);
+
+  // shared tasks (same store Home reads)
   const allTasks = useTasks((s) => s.tasks);
   const taskStore = useTasks();
   const [taskSheetOpen, setTaskSheetOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
-  const selectedDate = dateOf(selected);
-  const dayTasks = useMemo(
-    () => allTasks.filter((t) => t.date === selectedDate).sort((a, b) => a.time.localeCompare(b.time)),
-    [allTasks, selectedDate],
-  );
 
+  const nDays = daysInMonth(viewYear, viewMonth);
+  const fDow = firstDow(viewYear, viewMonth);
+  const dateFor = (day: number) => iso(viewYear, viewMonth, day);
+
+  const dayTasks = useMemo(
+    () => allTasks.filter((t) => t.date === selected).sort((a, b) => a.time.localeCompare(b.time)),
+    [allTasks, selected],
+  );
   const dayEvents = useMemo(
-    () => events.filter((e) => e.day === selected).sort((a, b) => a.time.localeCompare(b.time)),
+    () => events.filter((e) => e.date === selected).sort((a, b) => a.time.localeCompare(b.time)),
     [events, selected],
   );
-  const dotsFor = (day: number) =>
+  const dotsFor = (dateStr: string) =>
     [
-      ...events.filter((e) => e.day === day).map((e) => e.color),
-      ...allTasks.filter((t) => t.date === dateOf(day)).map((t) => t.tagColor),
+      ...events.filter((e) => e.date === dateStr).map((e) => e.color),
+      ...allTasks.filter((t) => t.date === dateStr).map((t) => t.tagColor),
     ].slice(0, 3);
 
   const openAddTask = () => { setEditingTask(null); setTaskSheetOpen(true); };
   const openEditTask = (t: Task) => { setEditingTask(t); setTaskSheetOpen(true); };
-
-  // week containing the selected day
-  const weekDays = useMemo(() => {
-    const dowOfSelected = (FIRST_DOW + selected - 1) % 7;
-    const start = selected - dowOfSelected;
-    return Array.from({ length: 7 }, (_, i) => start + i); // some may be <1 or >30
-  }, [selected]);
-
-  // month grid cells (leading blanks + days)
-  const monthCells = useMemo(() => {
-    const cells: (number | null)[] = Array.from({ length: FIRST_DOW }, () => null);
-    for (let d = 1; d <= DAYS_IN_MONTH; d++) cells.push(d);
-    return cells;
-  }, []);
-
   const openAdd = () => { setEditing(null); setSheetOpen(true); };
   const openEdit = (e: CalEvent) => { setEditing(e); setSheetOpen(true); };
 
+  // selected day number, only if the selected date is in the viewed month
+  const selDay = useMemo(() => {
+    const [y, m, d] = selected.split('-').map(Number);
+    return y === viewYear && m - 1 === viewMonth ? d : -1;
+  }, [selected, viewYear, viewMonth]);
+
+  // week (7 day-numbers, some <1 or >nDays = other months) around the selected day
+  const weekDays = useMemo(() => {
+    const anchor = selDay > 0 ? selDay : 1;
+    const dow = (fDow + anchor - 1) % 7;
+    const start = anchor - dow;
+    return Array.from({ length: 7 }, (_, i) => start + i);
+  }, [selDay, fDow]);
+
+  const monthCells = useMemo(() => {
+    const cells: (number | null)[] = Array.from({ length: fDow }, () => null);
+    for (let d = 1; d <= nDays; d++) cells.push(d);
+    return cells;
+  }, [fDow, nDays]);
+
+  const shiftMonth = (dir: number) => {
+    let m = viewMonth + dir;
+    let y = viewYear;
+    if (m < 0) { m = 11; y -= 1; }
+    if (m > 11) { m = 0; y += 1; }
+    setViewMonth(m);
+    setViewYear(y);
+  };
+  const goToday = () => {
+    setViewYear(YEAR);
+    setViewMonth(MONTH);
+    setSelected(TODAY);
+  };
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.canvas }} edges={['top']}>
-      <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 28, gap: 18 }} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={{ padding: 20, paddingBottom: 28, gap: 18 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accent} />}
+      >
         {/* header + week/month toggle */}
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', paddingTop: 6 }}>
           <View>
-            <Text style={{ fontSize: 13, color: colors.textDim, fontFamily: fonts.ui }}>{MONTH_NAME} {YEAR}</Text>
+            <Text style={{ fontSize: 13, color: colors.textDim, fontFamily: fonts.ui }}>{viewYear}</Text>
             <Text style={{ fontSize: 25, color: colors.text, fontFamily: fonts.uiBold, marginTop: 2 }}>Calendar</Text>
           </View>
           <View style={{ flexDirection: 'row', gap: 3, backgroundColor: '#131319', borderWidth: 1, borderColor: colors.border, borderRadius: 11, padding: 3 }}>
@@ -88,20 +119,37 @@ export default function Calendar() {
           </View>
         </View>
 
+        {/* month navigator */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Pressable onPress={() => shiftMonth(-1)} hitSlop={10} style={{ width: 34, height: 34, borderRadius: 11, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}>
+            <Icon name="back" size={16} color={colors.textSoft} />
+          </Pressable>
+          <Pressable onPress={goToday}>
+            <Text style={{ fontSize: 17, color: colors.text, fontFamily: fonts.uiSemi }}>{monthName(viewMonth)} {viewYear}</Text>
+          </Pressable>
+          <Pressable onPress={() => shiftMonth(1)} hitSlop={10} style={{ width: 34, height: 34, borderRadius: 11, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}>
+            <View style={{ transform: [{ scaleX: -1 }] }}>
+              <Icon name="back" size={16} color={colors.textSoft} />
+            </View>
+          </Pressable>
+        </View>
+
         {/* WEEK strip */}
         {mode === 'week' ? (
           <View style={{ flexDirection: 'row', gap: 5 }}>
             {weekDays.map((d, i) => {
-              const valid = d >= 1 && d <= DAYS_IN_MONTH;
-              const on = d === selected;
+              const valid = d >= 1 && d <= nDays;
+              const dateStr = valid ? dateFor(d) : '';
+              const on = valid && dateStr === selected;
+              const isToday = valid && dateStr === TODAY;
               return (
-                <Pressable key={i} onPress={() => valid && setSelected(d)} style={{ flex: 1, alignItems: 'center', gap: 8 }}>
+                <Pressable key={i} onPress={() => valid && setSelected(dateStr)} style={{ flex: 1, alignItems: 'center', gap: 8 }}>
                   <Text style={{ fontSize: 11, color: on ? accent : colors.textFainter, fontFamily: fonts.uiSemi }}>{DOW[i]}</Text>
-                  <View style={{ width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? accent : 'transparent' }}>
+                  <View style={{ width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: on ? accent : 'transparent', borderWidth: isToday && !on ? 1 : 0, borderColor: accent }}>
                     <Text style={{ fontFamily: fonts.monoSemi, fontSize: 14, color: on ? '#fff' : valid ? colors.textSoft : colors.textFainter }}>{valid ? d : ''}</Text>
                   </View>
                   <View style={{ flexDirection: 'row', gap: 3, minHeight: 7 }}>
-                    {valid && dotsFor(d).map((c, k) => (
+                    {valid && dotsFor(dateStr).map((c, k) => (
                       <View key={k} style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: c }} />
                     ))}
                   </View>
@@ -120,13 +168,15 @@ export default function Calendar() {
             <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
               {monthCells.map((d, i) => {
                 if (d === null) return <View key={i} style={{ width: `${100 / 7}%`, aspectRatio: 1 }} />;
-                const on = d === selected;
+                const dateStr = dateFor(d);
+                const on = dateStr === selected;
+                const isToday = dateStr === TODAY;
                 return (
                   <View key={i} style={{ width: `${100 / 7}%`, aspectRatio: 1, padding: 2 }}>
-                    <Pressable onPress={() => setSelected(d)} style={{ flex: 1, borderRadius: 10, alignItems: 'center', justifyContent: 'center', gap: 3, backgroundColor: on ? withAlpha(accent, 18) : colors.card, borderWidth: 1, borderColor: on ? accent : colors.border }}>
-                      <Text style={{ fontFamily: fonts.mono, fontSize: 12.5, color: on ? accent : colors.textSoft }}>{d}</Text>
+                    <Pressable onPress={() => setSelected(dateStr)} style={{ flex: 1, borderRadius: 10, alignItems: 'center', justifyContent: 'center', gap: 3, backgroundColor: on ? withAlpha(accent, 18) : colors.card, borderWidth: 1, borderColor: on || isToday ? accent : colors.border }}>
+                      <Text style={{ fontFamily: fonts.mono, fontSize: 12.5, color: on || isToday ? accent : colors.textSoft }}>{d}</Text>
                       <View style={{ flexDirection: 'row', gap: 2 }}>
-                        {dotsFor(d).map((c, k) => (
+                        {dotsFor(dateStr).map((c, k) => (
                           <View key={k} style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: c }} />
                         ))}
                       </View>
@@ -141,7 +191,9 @@ export default function Calendar() {
         {/* agenda */}
         <View>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <Text style={{ fontSize: 17, color: colors.text, fontFamily: fonts.uiSemi }}>{MONTH_NAME} {selected}</Text>
+            <Text style={{ fontSize: 17, color: colors.text, fontFamily: fonts.uiSemi }}>
+              {new Date(`${selected}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+            </Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
               <Text style={{ fontSize: 13, color: colors.textDim, fontFamily: fonts.mono }}>{dayEvents.length} events</Text>
               <Pressable onPress={openAdd} style={{ width: 30, height: 30, borderRadius: 9, backgroundColor: accent, alignItems: 'center', justifyContent: 'center' }}>
@@ -172,7 +224,7 @@ export default function Calendar() {
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <Text style={{ fontSize: 17, color: colors.text, fontFamily: fonts.uiSemi }}>Tasks</Text>
-              {selectedDate === TODAY && (
+              {selected === TODAY && (
                 <Text style={{ fontSize: 11, color: accent, fontFamily: fonts.uiSemi, backgroundColor: withAlpha(accent, 14), paddingHorizontal: 8, paddingVertical: 3, borderRadius: 7, overflow: 'hidden' }}>Today · on Home</Text>
               )}
             </View>
@@ -204,8 +256,8 @@ export default function Calendar() {
         </View>
       </ScrollView>
 
-      <EventSheet visible={sheetOpen} initial={editing} day={selected} onClose={() => setSheetOpen(false)} onSave={upsert} onDelete={remove} />
-      <TaskSheet visible={taskSheetOpen} initial={editingTask} defaultDate={selectedDate} onClose={() => setTaskSheetOpen(false)} onSave={taskStore.upsert} onDelete={taskStore.remove} />
+      <EventSheet visible={sheetOpen} initial={editing} date={selected} onClose={() => setSheetOpen(false)} onSave={upsert} onDelete={remove} />
+      <TaskSheet visible={taskSheetOpen} initial={editingTask} defaultDate={selected} onClose={() => setTaskSheetOpen(false)} onSave={taskStore.upsert} onDelete={taskStore.remove} />
     </SafeAreaView>
   );
 }

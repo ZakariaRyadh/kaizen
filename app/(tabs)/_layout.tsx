@@ -10,11 +10,16 @@ import { Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, IconName } from '../../components/Icon';
+import { syncReminders } from '../../lib/reminders';
+import { Notifications } from '../../services/notifications';
 import { useEvents } from '../../store/events';
 import { useGym } from '../../store/gym';
+import { useLearning } from '../../store/learning';
 import { useNotes } from '../../store/notes';
+import { useNotifications } from '../../store/notifications';
 import { useSettings } from '../../store/settings';
 import { useTasks } from '../../store/tasks';
+import { useWeight } from '../../store/weight';
 import { useAccent, withAlpha } from '../../theme/AccentContext';
 import { colors, fonts } from '../../theme/colors';
 
@@ -31,9 +36,9 @@ const SwipeTabs = withLayoutContext<
 const TABS: { name: string; label: string; icon: IconName }[] = [
   { name: 'index', label: 'Home', icon: 'home' },
   { name: 'gym', label: 'Gym', icon: 'gym' },
+  { name: 'learn', label: 'Learn', icon: 'book' },
   { name: 'calendar', label: 'Calendar', icon: 'calendar' },
   { name: 'notes', label: 'Notes', icon: 'notes' },
-  { name: 'settings', label: 'Settings', icon: 'settings' },
 ];
 
 // Custom bottom bar drawn to match the design (icon pill + tiny label).
@@ -92,6 +97,19 @@ export default function TabsLayout() {
     useNotes.getState().load().catch(() => {});
     useEvents.getState().load().catch(() => {});
     useGym.getState().load().catch(() => {});
+    useWeight.getState().load().catch(() => {});
+    useLearning.getState().load().catch(() => {});
+    useNotifications.getState().load().catch(() => {});
+
+    // schedule device reminders once tasks + settings are both in
+    Promise.all([useTasks.getState().load(), useSettings.getState().load()])
+      .then(() => {
+        const tasks = useTasks.getState().tasks;
+        const notifs = useSettings.getState().notifs;
+        syncReminders(tasks, notifs).catch(() => {});
+      })
+      .catch(() => {});
+
     useSettings
       .getState()
       .load()
@@ -99,6 +117,14 @@ export default function TabsLayout() {
         if (accent) setAccent(accent); // apply saved accent app-wide
       })
       .catch(() => {});
+
+    // when a reminder fires while the app is open, drop it into the inbox
+    const sub = Notifications.addNotificationReceivedListener((evt) => {
+      const c = evt.request.content;
+      const kind = (c.data?.kind as any) ?? 'system';
+      useNotifications.getState().add(c.title ?? 'Reminder', c.body ?? '', kind).catch(() => {});
+    });
+    return () => sub.remove();
   }, []);
 
   return (
@@ -109,9 +135,9 @@ export default function TabsLayout() {
     >
       <SwipeTabs.Screen name="index" />
       <SwipeTabs.Screen name="gym" />
+      <SwipeTabs.Screen name="learn" />
       <SwipeTabs.Screen name="calendar" />
       <SwipeTabs.Screen name="notes" />
-      <SwipeTabs.Screen name="settings" />
     </SwipeTabs>
   );
 }

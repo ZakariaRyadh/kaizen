@@ -2,18 +2,17 @@ import { create } from 'zustand';
 
 import { CalEvent, Priority } from '../components/EventSheet';
 import { apiDelete, apiGet, apiPatch, apiPost } from '../services/api';
-import { dateOf } from './tasks';
 
 const toApi = (e: CalEvent) => ({
   title: e.title,
-  date: dateOf(e.day),
+  date: e.date,
   time: e.time,
   category_color: e.color,
   priority: e.priority,
 });
 const fromApi = (r: any): CalEvent => ({
   id: String(r.id),
-  day: parseInt(String(r.date).split('-')[2], 10),
+  date: String(r.date),
   time: r.time,
   title: r.title,
   color: r.category_color,

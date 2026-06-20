@@ -43,6 +43,8 @@ export function ProgramEditor({ visible, initial, onClose, onSave }: Props) {
     setDays((d) => d.map((day, k) => (k === i ? { ...day, label } : day)));
   const addDay = () => setDays((d) => [...d, blankDay(d.length + 1)]);
   const removeDay = (i: number) => setDays((d) => (d.length > 1 ? d.filter((_, k) => k !== i) : d));
+  const toggleCardio = (i: number) =>
+    setDays((d) => d.map((day, k) => (k === i ? { ...day, isCardio: !day.isCardio } : day)));
 
   // --- exercise ops ---
   const addEx = (di: number) =>
@@ -61,9 +63,14 @@ export function ProgramEditor({ visible, initial, onClose, onSave }: Props) {
     const cleanDays = days
       .map((day) => ({
         label: day.label.trim() || 'Day',
-        exercises: day.exercises.filter((e) => e.name.trim()).map((e) => ({ ...e, sets: Number(e.sets) || 1 })),
+        isCardio: !!day.isCardio,
+        exercises: day.isCardio
+          ? []
+          : day.exercises.filter((e) => e.name.trim()).map((e) => ({ ...e, sets: Number(e.sets) || 1 })),
       }))
-      .filter((day) => day.exercises.length > 0);
+      // keep a day if it's cardio, has exercises, OR has a real custom name;
+      // only drop leftover empty auto-named "Day N" rows.
+      .filter((day) => day.isCardio || day.exercises.length > 0 || !/^Day \d+$/.test(day.label));
     if (cleanDays.length === 0) return;
     onSave({
       id: initial?.id ?? Date.now().toString(),
@@ -99,6 +106,22 @@ export function ProgramEditor({ visible, initial, onClose, onSave }: Props) {
                   )}
                 </View>
 
+                {/* cardio-day toggle */}
+                <Pressable
+                  onPress={() => toggleCardio(di)}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 9, alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 11, backgroundColor: day.isCardio ? withAlpha(colors.green, 18) : 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: day.isCardio ? colors.green : colors.borderSoft }}
+                >
+                  <Text style={{ color: day.isCardio ? colors.green : colors.textMuted, fontFamily: fonts.uiSemi, fontSize: 13 }}>
+                    {day.isCardio ? '🏃 Cardio day' : 'Make cardio day'}
+                  </Text>
+                </Pressable>
+
+                {day.isCardio ? (
+                  <Text style={{ color: colors.textFaint, fontFamily: fonts.ui, fontSize: 12.5 }}>
+                    No exercises — this day runs a cardio timer when you train it.
+                  </Text>
+                ) : (
+                <>
                 {/* exercises in this day */}
                 {day.exercises.map((ex, ei) => (
                   <View key={ei} style={{ backgroundColor: colors.inset, borderRadius: 13, padding: 11, gap: 8 }}>
@@ -123,6 +146,8 @@ export function ProgramEditor({ visible, initial, onClose, onSave }: Props) {
                 <Pressable onPress={() => addEx(di)} style={{ paddingVertical: 10, borderRadius: 11, borderWidth: 1, borderColor: colors.borderSoft, borderStyle: 'dashed', alignItems: 'center' }}>
                   <Text style={{ color: colors.textMuted, fontFamily: fonts.uiSemi, fontSize: 13 }}>+ Add exercise</Text>
                 </Pressable>
+                </>
+                )}
               </View>
             ))}
 

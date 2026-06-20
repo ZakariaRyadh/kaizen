@@ -10,20 +10,32 @@ export type Exercise = {
   pr?: boolean;
 };
 
-export type ProgramDay = { label: string; exercises: Exercise[] };
+export type ProgramDay = { label: string; exercises: Exercise[]; isCardio?: boolean };
 
 export type Program = {
   id: string;
   name: string;
   meta: string;
   days: ProgramDay[];
+  isActive?: boolean;
+};
+
+// one actual logged set (what you really lifted)
+export type SetLog = {
+  id: string;
+  exercise: string;
+  order: number;
+  reps: number;
+  weight: number;
+  date: string;
+  isPr: boolean;
 };
 
 export const PROGRAMS: Program[] = [
   {
     id: 'ppl',
     name: 'Push / Pull / Legs',
-    meta: '3 days · hypertrophy',
+    meta: '3 lift + cardio',
     days: [
       {
         label: 'Push',
@@ -52,6 +64,7 @@ export const PROGRAMS: Program[] = [
           { name: 'Calf Raise', sub: 'Calves', sets: 4, reps: '15', weight: '60 kg' },
         ],
       },
+      { label: 'Cardio', exercises: [], isCardio: true },
     ],
   },
   {

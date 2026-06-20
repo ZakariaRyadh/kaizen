@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 
 import { SwipeSheet } from './SwipeSheet';
-import { MONTH_NAME, YEAR } from '../store/tasks';
 import { useAccent, withAlpha } from '../theme/AccentContext';
 import { colors, fonts } from '../theme/colors';
 import { TAG_COLORS } from '../theme/tags';
@@ -11,12 +10,15 @@ export type Priority = 'low' | 'med' | 'high';
 
 export type CalEvent = {
   id: string;
-  day: number;          // day of month (June 2026)
+  date: string;         // 'YYYY-MM-DD' (full date, any month)
   time: string;
   title: string;
   color: string;        // category color bar
   priority: Priority;
 };
+
+const prettyDate = (iso: string) =>
+  new Date(`${iso}T00:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 
 export const PRIORITY_META: Record<Priority, { label: string; color: string }> = {
   low: { label: 'Low', color: '#22c55e' },
@@ -27,13 +29,13 @@ export const PRIORITY_META: Record<Priority, { label: string; color: string }> =
 type Props = {
   visible: boolean;
   initial?: CalEvent | null;
-  day: number;          // selected day (for new events)
+  date: string;         // selected date (for new events)
   onClose: () => void;
   onSave: (e: CalEvent) => void;
   onDelete?: (id: string) => void;
 };
 
-export function EventSheet({ visible, initial, day, onClose, onSave, onDelete }: Props) {
+export function EventSheet({ visible, initial, date, onClose, onSave, onDelete }: Props) {
   const { accent } = useAccent();
   const [title, setTitle] = useState('');
   const [time, setTime] = useState('');
@@ -52,7 +54,7 @@ export function EventSheet({ visible, initial, day, onClose, onSave, onDelete }:
     if (!title.trim()) return;
     onSave({
       id: initial?.id ?? Date.now().toString(),
-      day: initial?.day ?? day,
+      date: initial?.date ?? date,
       time: time.trim() || 'All day',
       title: title.trim(),
       color,
@@ -64,7 +66,7 @@ export function EventSheet({ visible, initial, day, onClose, onSave, onDelete }:
   return (
     <SwipeSheet visible={visible} onClose={onClose}>
           <Text style={{ fontSize: 19, color: colors.text, fontFamily: fonts.uiBold }}>{initial ? 'Edit event' : 'New event'}</Text>
-          <Text style={{ fontSize: 13, color: colors.textDim, fontFamily: fonts.ui, marginTop: 4, marginBottom: 16 }}>{MONTH_NAME} {initial?.day ?? day}, {YEAR}</Text>
+          <Text style={{ fontSize: 13, color: colors.textDim, fontFamily: fonts.ui, marginTop: 4, marginBottom: 16 }}>{prettyDate(initial?.date ?? date)}</Text>
 
           <TextInput value={title} onChangeText={setTitle} placeholder="Event title" placeholderTextColor={colors.textFaint} style={input} />
           <TextInput value={time} onChangeText={setTime} placeholder="Time (e.g. 11:00)" placeholderTextColor={colors.textFaint} style={[input, { marginTop: 12 }]} />

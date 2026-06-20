@@ -20,7 +20,9 @@ export type IconName =
   | 'mail'
   | 'lock'
   | 'keypad'
-  | 'back';
+  | 'back'
+  | 'book'
+  | 'bell';
 
 type Props = { name: IconName; size?: number; color?: string };
 
@@ -143,6 +145,20 @@ export function Icon({ name, size = 23, color = '#fff' }: Props) {
       return (
         <Svg {...s} viewBox="0 0 20 20">
           <Path d="M12 4l-6 6 6 6" {...stroke} strokeWidth={2} />
+        </Svg>
+      );
+    case 'book':
+      return (
+        <Svg {...s} viewBox="0 0 24 24">
+          <Path d="M4 5.5c2.2-1.2 5-1.2 8 0v13.5c-3-1.2-5.8-1.2-8 0z" {...stroke} />
+          <Path d="M20 5.5c-2.2-1.2-5-1.2-8 0v13.5c3-1.2 5.8-1.2 8 0z" {...stroke} />
+        </Svg>
+      );
+    case 'bell':
+      return (
+        <Svg {...s} viewBox="0 0 24 24">
+          <Path d="M18 9a6 6 0 1 0-12 0c0 5-2 6.5-2 6.5h16S18 14 18 9z" {...stroke} />
+          <Path d="M10.5 19a1.8 1.8 0 0 0 3 0" {...stroke} />
         </Svg>
       );
     default:

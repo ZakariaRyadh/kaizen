@@ -1,9 +1,9 @@
 import { create } from 'zustand';
 
-import { apiLogin, apiLogout, apiRegister, getMe } from '../services/api';
+import { apiLogin, apiLogout, apiRegister, getMe, updateAvatar, updateMe } from '../services/api';
 import { getAccessToken } from '../services/storage';
 
-type User = { id: number; email: string; display_name: string } | null;
+type User = { id: number; email: string; display_name: string; avatar?: string } | null;
 
 type AuthState = {
   ready: boolean;        // finished the initial token check
@@ -14,6 +14,8 @@ type AuthState = {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, displayName: string) => Promise<void>;
   logout: () => Promise<void>;
+  updateName: (displayName: string) => Promise<void>;
+  setAvatar: (dataUri: string) => Promise<void>;
 };
 
 export const useAuth = create<AuthState>((set) => ({
@@ -62,5 +64,15 @@ export const useAuth = create<AuthState>((set) => ({
   logout: async () => {
     await apiLogout();
     set({ isLoggedIn: false, user: null });
+  },
+
+  updateName: async (displayName) => {
+    const user = await updateMe(displayName);
+    set({ user });
+  },
+
+  setAvatar: async (dataUri) => {
+    const user = await updateAvatar(dataUri);
+    set({ user });
   },
 }));
