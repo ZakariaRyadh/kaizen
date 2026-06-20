@@ -9,7 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Icon } from '../components/Icon';
 import { changePassword } from '../services/api';
-import { ensurePermission, fireNow, Notifications } from '../services/notifications';
+import { ensurePermission, Notifications } from '../services/notifications';
 import { useAuth } from '../store/auth';
 import { PROGRESS_OPTIONS, REST_OPTIONS, useSettings } from '../store/settings';
 import { useAccent, withAlpha } from '../theme/AccentContext';
@@ -49,14 +49,6 @@ export default function Settings() {
     setPermGranted(ok);
     if (!ok) Alert.alert('Blocked', 'Enable notifications for Kaizen in your phone settings.');
   };
-  const sendTest = async () => {
-    const ok = await ensurePermission();
-    setPermGranted(ok);
-    if (!ok) return Alert.alert('Blocked', 'Allow notifications first.');
-    await fireNow({ title: 'Test notification', body: 'Notifications are working 🎉', kind: 'system' });
-    Alert.alert('Sent', 'You should see a notification now.');
-  };
-
   // profile photo: pick → crop square → shrink to 256px JPEG → base64 → save
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const pickPhoto = async () => {
@@ -312,9 +304,6 @@ export default function Settings() {
                 </Pressable>
               )}
             </View>
-            <Pressable onPress={sendTest} style={{ borderWidth: 1, borderColor: colors.borderSoft, borderRadius: 11, paddingVertical: 11, alignItems: 'center' }}>
-              <Text style={{ color: colors.textSoft, fontFamily: fonts.uiSemi, fontSize: 13 }}>Send test notification</Text>
-            </Pressable>
           </View>
 
           <View style={{ height: 8 }} />
