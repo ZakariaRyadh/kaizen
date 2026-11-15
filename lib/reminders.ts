@@ -18,6 +18,7 @@ import { useNotifications } from '../store/notifications';
 import { useSettings } from '../store/settings';
 import { useTasks } from '../store/tasks';
 import { todayIso } from '../store/today';
+import { fmtRange, parseTime } from './time';
 
 /*
  * Reminder engine.
@@ -38,22 +39,6 @@ const LOGGED_KEY = 'reminders:logged';
 const WORKOUT_AT = { h: 17, m: 0 };
 const LEARNING_AT = { h: 19, m: 30 };
 const WEEKLY_AT = { h: 18, m: 0, weekday: 0 }; // Sunday
-
-// "9:30", "09:30", "9:30 pm", "9pm", "21h30" -> {h, m}; null for "All day"/blank
-export function parseTime(t: string): { h: number; m: number } | null {
-  const m = /^\s*(\d{1,2})(?:[:h.](\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?\s*$/i.exec(t ?? '');
-  if (!m) return null;
-  let h = Number(m[1]);
-  const min = m[2] ? Number(m[2]) : 0;
-  const ap = m[3]?.toLowerCase().replace(/\./g, '');
-  if (ap) {
-    if (h < 1 || h > 12) return null;
-    if (ap === 'pm' && h !== 12) h += 12;
-    if (ap === 'am' && h === 12) h = 0;
-  }
-  if (h > 23 || min > 59) return null;
-  return { h, m: min };
-}
 
 const at = (iso: string, h: number, m: number) => {
   const [y, mo, d] = iso.split('-').map(Number);
@@ -82,7 +67,8 @@ function plan(): Reminder[] {
       const when = at(t.date, hm.h, hm.m) - taskLead * 60_000;
       if (when <= now) continue;
       const left = t.subtasks.filter((s) => !s.done).length;
-      const bits = [taskLead ? `In ${taskLead} min · ${t.time}` : `Due now · ${t.time}`];
+      const range = fmtRange(t.time, t.duration);
+      const bits = [taskLead ? `In ${taskLead} min · ${range}` : `Due now · ${range}`];
       if (t.tag) bits.push(t.tag);
       if (left) bits.push(`${left} subtask${left > 1 ? 's' : ''} left`);
       out.push({ id: `task-${t.id}`, title: t.title, body: bits.join(' · '), kind: 'task', at: when, taskId: t.id });

@@ -15,6 +15,7 @@ import { Icon, IconName } from '../../components/Icon';
 import { Ring } from '../../components/Ring';
 import { Check, SubtaskList, subtaskProgress } from '../../components/SubtaskList';
 import { TaskSheet } from '../../components/TaskSheet';
+import { fmtRange } from '../../lib/time';
 import { useRefresh } from '../../hooks/useRefresh';
 import { useAuth } from '../../store/auth';
 import { useEvents } from '../../store/events';
@@ -227,7 +228,7 @@ export default function Home() {
             iconBg={withAlpha(nextEvent.color, 16)}
             iconColor={nextEvent.color}
             icon="calendar"
-            kicker={`Up next · ${nextEvent.time}`}
+            kicker={`Up next · ${fmtRange(nextEvent.time, nextEvent.duration)}`}
             title={nextEvent.title}
             sub={`${PRIORITY_META[nextEvent.priority as Priority].label} priority`}
             subColor={PRIORITY_META[nextEvent.priority as Priority].color}
@@ -347,7 +348,7 @@ function TaskRow({
           {!!item.repeat && <Icon name="flame" size={11} color={colors.textFaint} />}
         </View>
         <Text style={{ fontSize: 12, color: colors.textFaint, marginTop: 2, fontFamily: fonts.mono }}>
-          {item.time}{item.repeat ? ` · ${item.repeat}` : ''}{progress ? ` · ${progress}` : ''}
+          {fmtRange(item.time, item.duration)}{item.repeat ? ` · ${item.repeat}` : ''}{progress ? ` · ${progress}` : ''}
         </Text>
       </Pressable>
 

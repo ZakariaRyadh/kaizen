@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { apiDelete, apiGet, apiPatch, apiPost } from '../services/api';
 import { Task } from '../theme/tags';
 
+import { normalizeTime } from '../lib/time';
 import { todayIso } from './today';
 
 const _pad = (n: number) => String(n).padStart(2, '0');
@@ -24,17 +25,19 @@ const toApi = (t: Task) => ({
   done: t.done,
   due_date: t.date,
   subtasks: t.subtasks,
+  duration_min: t.duration,
 });
 const fromApi = (r: any): Task => ({
   id: String(r.id),
   title: r.title,
-  time: r.time,
+  time: normalizeTime(r.time), // old free-text times -> 'HH:MM'
   tag: r.tag,
   tagColor: r.tag_color,
   repeat: r.repeat,
   done: r.done,
   date: r.due_date ?? todayIso(),
   subtasks: Array.isArray(r.subtasks) ? r.subtasks : [],
+  duration: r.duration_min ?? 0,
 });
 
 type State = {

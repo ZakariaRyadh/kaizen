@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 
 import { SwipeSheet } from './SwipeSheet';
+import { TimePicker } from './TimePicker';
+import { ALL_DAY } from '../lib/time';
 import { useAccent, withAlpha } from '../theme/AccentContext';
 import { colors, fonts } from '../theme/colors';
 import { TAG_COLORS } from '../theme/tags';
@@ -15,6 +17,7 @@ export type CalEvent = {
   title: string;
   color: string;        // category color bar
   priority: Priority;
+  duration: number; // minutes, 0 = none
 };
 
 const prettyDate = (iso: string) =>
@@ -38,14 +41,16 @@ type Props = {
 export function EventSheet({ visible, initial, date, onClose, onSave, onDelete }: Props) {
   const { accent } = useAccent();
   const [title, setTitle] = useState('');
-  const [time, setTime] = useState('');
+  const [time, setTime] = useState(ALL_DAY);
+  const [duration, setDuration] = useState(0);
   const [color, setColor] = useState(TAG_COLORS[0]);
   const [priority, setPriority] = useState<Priority>('med');
 
   useEffect(() => {
     if (!visible) return;
     setTitle(initial?.title ?? '');
-    setTime(initial?.time ?? '');
+    setTime(initial?.time ?? ALL_DAY);
+    setDuration(initial?.duration ?? 0);
     setColor(initial?.color ?? TAG_COLORS[0]);
     setPriority(initial?.priority ?? 'med');
   }, [visible, initial]);
@@ -55,7 +60,8 @@ export function EventSheet({ visible, initial, date, onClose, onSave, onDelete }
     onSave({
       id: initial?.id ?? Date.now().toString(),
       date: initial?.date ?? date,
-      time: time.trim() || 'All day',
+      time,
+      duration: time === ALL_DAY ? 0 : duration,
       title: title.trim(),
       color,
       priority,
@@ -64,12 +70,13 @@ export function EventSheet({ visible, initial, date, onClose, onSave, onDelete }
   };
 
   return (
-    <SwipeSheet visible={visible} onClose={onClose}>
+    <SwipeSheet visible={visible} onClose={onClose} scroll>
           <Text style={{ fontSize: 19, color: colors.text, fontFamily: fonts.uiBold }}>{initial ? 'Edit event' : 'New event'}</Text>
           <Text style={{ fontSize: 13, color: colors.textDim, fontFamily: fonts.ui, marginTop: 4, marginBottom: 16 }}>{prettyDate(initial?.date ?? date)}</Text>
 
           <TextInput value={title} onChangeText={setTitle} placeholder="Event title" placeholderTextColor={colors.textFaint} style={input} />
-          <TextInput value={time} onChangeText={setTime} placeholder="Time (e.g. 11:00)" placeholderTextColor={colors.textFaint} style={[input, { marginTop: 12 }]} />
+          <Text style={label}>Time</Text>
+          <TimePicker time={time} duration={duration} accent={accent} onChange={(t, d) => { setTime(t); setDuration(d); }} />
 
           <Text style={label}>Category color</Text>
           <View style={{ flexDirection: 'row', gap: 10 }}>

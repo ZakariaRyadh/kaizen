@@ -6,6 +6,7 @@ import { CalEvent, EventSheet, PRIORITY_META, Priority } from '../../components/
 import { Icon } from '../../components/Icon';
 import { Check, SubtaskList, subtaskProgress } from '../../components/SubtaskList';
 import { TaskSheet } from '../../components/TaskSheet';
+import { addMinutes, fmtRange } from '../../lib/time';
 import { useRefresh } from '../../hooks/useRefresh';
 import { useEvents } from '../../store/events';
 import { daysInMonth, firstDow, iso, monthName, useTasks } from '../../store/tasks';
@@ -211,7 +212,10 @@ export default function Calendar() {
               return (
                 <Pressable key={ev.id} onPress={() => openEdit(ev)} style={{ flexDirection: 'row', alignItems: 'center', gap: 13, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 15, padding: 14 }}>
                   <View style={{ width: 4, alignSelf: 'stretch', borderRadius: 4, backgroundColor: ev.color }} />
-                  <Text style={{ fontFamily: fonts.mono, fontSize: 12, color: colors.textMuted, width: 56 }}>{ev.time}</Text>
+                  <View style={{ width: 56 }}>
+                    <Text style={{ fontFamily: fonts.mono, fontSize: 12, color: colors.textMuted }}>{ev.time}</Text>
+                    {ev.duration > 0 && <Text style={{ fontFamily: fonts.mono, fontSize: 11, color: colors.textFaint, marginTop: 2 }}>{addMinutes(ev.time, ev.duration)}</Text>}
+                  </View>
                   <Text style={{ flex: 1, fontSize: 14.5, color: colors.textMid, fontFamily: fonts.uiSemi }}>{ev.title}</Text>
                   <Text style={{ fontSize: 10, fontFamily: fonts.uiBold, color: pri.color, backgroundColor: withAlpha(pri.color, 15), paddingHorizontal: 8, paddingVertical: 4, borderRadius: 7, overflow: 'hidden' }}>{pri.label}</Text>
                 </Pressable>
@@ -245,7 +249,7 @@ export default function Calendar() {
                 </Pressable>
                 <Pressable onPress={() => openEditTask(t)} style={{ flex: 1 }}>
                   <Text style={{ fontSize: 14.5, color: t.done ? colors.textFaint : colors.textMid, fontFamily: fonts.ui, textDecorationLine: t.done ? 'line-through' : 'none' }}>{t.title}</Text>
-                  <Text style={{ fontSize: 12, color: colors.textFaint, fontFamily: fonts.mono, marginTop: 2 }}>{t.time}{t.subtasks.length ? ` · ${subtaskProgress(t.subtasks)}` : ''}</Text>
+                  <Text style={{ fontSize: 12, color: colors.textFaint, fontFamily: fonts.mono, marginTop: 2 }}>{fmtRange(t.time, t.duration)}{t.subtasks.length ? ` · ${subtaskProgress(t.subtasks)}` : ''}</Text>
                 </Pressable>
                 <Text style={{ fontSize: 11, fontFamily: fonts.uiSemi, color: t.tagColor, backgroundColor: withAlpha(t.tagColor, 14), paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8, overflow: 'hidden' }}>{t.tag}</Text>
               </View>

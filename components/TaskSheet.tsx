@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 
 import { Check } from './SubtaskList';
+import { TimePicker } from './TimePicker';
+import { ALL_DAY, fmtRange, span } from '../lib/time';
+import { useTasks } from '../store/tasks';
 import { SwipeSheet } from './SwipeSheet';
 import { useAccent, withAlpha } from '../theme/AccentContext';
 import { colors, fonts } from '../theme/colors';
@@ -19,7 +22,8 @@ type Props = {
 export function TaskSheet({ visible, initial, defaultDate, onClose, onSave, onDelete }: Props) {
   const { accent } = useAccent();
   const [title, setTitle] = useState('');
-  const [time, setTime] = useState('');
+  const [time, setTime] = useState(ALL_DAY);
+  const [duration, setDuration] = useState(0);
   const [tag, setTag] = useState(TAG_PRESETS[0].name);
   const [tagColor, setTagColor] = useState(TAG_PRESETS[0].color);
   const [repeat, setRepeat] = useState<RepeatKey>('');
@@ -30,7 +34,8 @@ export function TaskSheet({ visible, initial, defaultDate, onClose, onSave, onDe
   useEffect(() => {
     if (!visible) return;
     setTitle(initial?.title ?? '');
-    setTime(initial?.time ?? '');
+    setTime(initial?.time ?? ALL_DAY);
+    setDuration(initial?.duration ?? 0);
     setTag(initial?.tag ?? TAG_PRESETS[0].name);
     setTagColor(initial?.tagColor ?? TAG_PRESETS[0].color);
     setRepeat(initial?.repeat ?? '');
@@ -48,6 +53,19 @@ export function TaskSheet({ visible, initial, defaultDate, onClose, onSave, onDe
     setSubtasks((s) => s.map((x) => (x.id === id ? { ...x, ...patch } : x)));
   const removeSub = (id: string) => setSubtasks((s) => s.filter((x) => x.id !== id));
 
+  // warn (don't block) when this overlaps another timed task that day
+  const allTasks = useTasks((s) => s.tasks);
+  const day = initial?.date ?? defaultDate;
+  const mine = span(time, duration);
+  const clash = mine
+    ? allTasks.find((t) => {
+        if (t.id === initial?.id || t.date !== day || t.done) return false;
+        const o = span(t.time, t.duration);
+        return !!o && o[0] < mine[1] && mine[0] < o[1];
+      })
+    : undefined;
+  const conflict = clash ? `Overlaps with "${clash.title}" (${fmtRange(clash.time, clash.duration)})` : null;
+
   const save = () => {
     if (!title.trim()) return;
     // keep a typed-but-not-added subtask, drop blank ones
@@ -57,7 +75,8 @@ export function TaskSheet({ visible, initial, defaultDate, onClose, onSave, onDe
     onSave({
       id: initial?.id ?? Date.now().toString(),
       title: title.trim(),
-      time: time.trim() || 'All day',
+      time,
+      duration: time === ALL_DAY ? 0 : duration,
       tag,
       tagColor,
       repeat,
@@ -121,12 +140,15 @@ export function TaskSheet({ visible, initial, defaultDate, onClose, onSave, onDe
             </Field>
 
             <Field label="Time">
-              <TextInput
-                value={time}
-                onChangeText={setTime}
-                placeholder="09:00  (or leave blank for All day)"
-                placeholderTextColor={colors.textFaint}
-                style={input}
+              <TimePicker
+                time={time}
+                duration={duration}
+                accent={accent}
+                conflict={conflict}
+                onChange={(t, d) => {
+                  setTime(t);
+                  setDuration(d);
+                }}
               />
             </Field>
 

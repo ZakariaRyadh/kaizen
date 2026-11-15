@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 import { CalEvent, Priority } from '../components/EventSheet';
+import { normalizeTime } from '../lib/time';
 import { apiDelete, apiGet, apiPatch, apiPost } from '../services/api';
 
 const toApi = (e: CalEvent) => ({
@@ -9,14 +10,16 @@ const toApi = (e: CalEvent) => ({
   time: e.time,
   category_color: e.color,
   priority: e.priority,
+  duration_min: e.duration,
 });
 const fromApi = (r: any): CalEvent => ({
   id: String(r.id),
   date: String(r.date),
-  time: r.time,
+  time: normalizeTime(r.time),
   title: r.title,
   color: r.category_color,
   priority: r.priority as Priority,
+  duration: r.duration_min ?? 0,
 });
 
 type State = {

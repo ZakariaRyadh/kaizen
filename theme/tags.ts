@@ -30,4 +30,5 @@ export type Task = {
   done: boolean;
   date: string; // 'YYYY-MM-DD' — which day this task belongs to
   subtasks: Subtask[];
+  duration: number; // minutes, 0 = none
 };
