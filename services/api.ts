@@ -108,6 +108,9 @@ export const updateAvatar = (avatar: string) =>
 export const changePassword = (current_password: string, new_password: string) =>
   request<{ message: string }>('POST', '/auth/change-password/', { current_password, new_password });
 
+export const deleteAccount = (password: string) =>
+  request<void>('POST', '/auth/delete-account/', { password });
+
 // ── generic CRUD (used later to sync tasks/notes/etc) ──
 export const apiGet = <T>(path: string) => request<T>('GET', path);
 export const apiPost = <T>(path: string, body: object) => request<T>('POST', path, body);

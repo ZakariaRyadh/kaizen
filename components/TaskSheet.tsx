@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 
+import { Check } from './SubtaskList';
 import { SwipeSheet } from './SwipeSheet';
 import { useAccent, withAlpha } from '../theme/AccentContext';
 import { colors, fonts } from '../theme/colors';
-import { REPEATS, RepeatKey, TAG_COLORS, TAG_PRESETS, Task } from '../theme/tags';
+import { REPEATS, RepeatKey, Subtask, TAG_COLORS, TAG_PRESETS, Task } from '../theme/tags';
 
 type Props = {
   visible: boolean;
@@ -22,6 +23,8 @@ export function TaskSheet({ visible, initial, defaultDate, onClose, onSave, onDe
   const [tag, setTag] = useState(TAG_PRESETS[0].name);
   const [tagColor, setTagColor] = useState(TAG_PRESETS[0].color);
   const [repeat, setRepeat] = useState<RepeatKey>('');
+  const [subtasks, setSubtasks] = useState<Subtask[]>([]);
+  const [newSub, setNewSub] = useState('');
 
   // load the task into the form whenever the sheet opens
   useEffect(() => {
@@ -31,10 +34,26 @@ export function TaskSheet({ visible, initial, defaultDate, onClose, onSave, onDe
     setTag(initial?.tag ?? TAG_PRESETS[0].name);
     setTagColor(initial?.tagColor ?? TAG_PRESETS[0].color);
     setRepeat(initial?.repeat ?? '');
+    setSubtasks(initial?.subtasks ?? []);
+    setNewSub('');
   }, [visible, initial]);
+
+  const addSub = () => {
+    const t = newSub.trim();
+    if (!t) return;
+    setSubtasks((s) => [...s, { id: `${Date.now()}${Math.random().toString(36).slice(2, 6)}`, title: t, done: false }]);
+    setNewSub('');
+  };
+  const editSub = (id: string, patch: Partial<Subtask>) =>
+    setSubtasks((s) => s.map((x) => (x.id === id ? { ...x, ...patch } : x)));
+  const removeSub = (id: string) => setSubtasks((s) => s.filter((x) => x.id !== id));
 
   const save = () => {
     if (!title.trim()) return;
+    // keep a typed-but-not-added subtask, drop blank ones
+    const pending = newSub.trim() ? [{ id: `${Date.now()}`, title: newSub.trim(), done: false }] : [];
+    const subs = [...subtasks, ...pending].map((x) => ({ ...x, title: x.title.trim() })).filter((x) => x.title);
+    const done = subs.length ? subs.every((x) => x.done) : (initial?.done ?? false);
     onSave({
       id: initial?.id ?? Date.now().toString(),
       title: title.trim(),
@@ -42,8 +61,9 @@ export function TaskSheet({ visible, initial, defaultDate, onClose, onSave, onDe
       tag,
       tagColor,
       repeat,
-      done: initial?.done ?? false,
+      done,
       date: initial?.date ?? defaultDate,
+      subtasks: subs,
     });
     onClose();
   };
@@ -62,6 +82,42 @@ export function TaskSheet({ visible, initial, defaultDate, onClose, onSave, onDe
                 placeholderTextColor={colors.textFaint}
                 style={input}
               />
+            </Field>
+
+            <Field label="Subtasks">
+              <View style={{ gap: 8 }}>
+                {subtasks.map((st) => (
+                  <View key={st.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <Pressable onPress={() => editSub(st.id, { done: !st.done })} hitSlop={6}>
+                      <Check done={st.done} accent={accent} size={20} />
+                    </Pressable>
+                    <TextInput
+                      value={st.title}
+                      onChangeText={(v) => editSub(st.id, { title: v })}
+                      placeholderTextColor={colors.textFaint}
+                      style={[input, { flex: 1, paddingVertical: 10 }]}
+                    />
+                    <Pressable onPress={() => removeSub(st.id)} hitSlop={6} style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: 'rgba(239,68,68,0.14)', alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ color: colors.red, fontSize: 16, lineHeight: 18 }}>×</Text>
+                    </Pressable>
+                  </View>
+                ))}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <TextInput
+                    value={newSub}
+                    onChangeText={setNewSub}
+                    onSubmitEditing={addSub}
+                    submitBehavior="submit"
+                    returnKeyType="done"
+                    placeholder="Add a subtask…"
+                    placeholderTextColor={colors.textFaint}
+                    style={[input, { flex: 1, paddingVertical: 10 }]}
+                  />
+                  <Pressable onPress={addSub} style={{ width: 40, height: 40, borderRadius: 11, backgroundColor: withAlpha(accent, 18), alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ color: accent, fontSize: 20, lineHeight: 22, fontFamily: fonts.uiSemi }}>+</Text>
+                  </Pressable>
+                </View>
+              </View>
             </Field>
 
             <Field label="Time">

@@ -8,12 +8,12 @@ import ReorderableList, {
   reorderItems,
   useReorderableDrag,
 } from 'react-native-reorderable-list';
-import Svg, { Path } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PRIORITY_META, Priority } from '../../components/EventSheet';
 import { Icon, IconName } from '../../components/Icon';
 import { Ring } from '../../components/Ring';
+import { Check, SubtaskList, subtaskProgress } from '../../components/SubtaskList';
 import { TaskSheet } from '../../components/TaskSheet';
 import { useRefresh } from '../../hooks/useRefresh';
 import { useAuth } from '../../store/auth';
@@ -42,7 +42,7 @@ export default function Home() {
   const firstName = (user?.display_name || user?.email?.split('@')[0] || '').split(' ')[0];
   const initial = (user?.display_name || user?.email || 'A').charAt(0).toUpperCase();
   const allTasks = useTasks((s) => s.tasks);
-  const { upsert, remove, toggle, setTasks } = useTasks();
+  const { upsert, remove, toggle, toggleSubtask, setTasks } = useTasks();
   const widgets = useSettings((s) => s.widgets);
   const show = (k: string) => widgets[k] !== false;
   const unread = useNotifications((s) => s.items.filter((n) => !n.read).length);
@@ -127,12 +127,13 @@ export default function Home() {
   const Header = (
     <View style={{ gap: 18, paddingBottom: 8 }}>
       {/* header */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 6 }}>
-        <View>
-          <Text style={{ fontSize: 13, color: colors.textDim, fontFamily: fonts.ui }}>{greeting()}{firstName ? `, ${firstName}` : ''}</Text>
-          <Text style={{ fontSize: 23, color: colors.text, fontFamily: fonts.uiBold, marginTop: 2 }}>{TODAY_LABEL}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingTop: 6 }}>
+        {/* text takes the leftover width and shrinks to fit; buttons never move */}
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text numberOfLines={1} style={{ fontSize: 13, color: colors.textDim, fontFamily: fonts.ui }}>{greeting()}{firstName ? `, ${firstName}` : ''}</Text>
+          <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={{ fontSize: 23, color: colors.text, fontFamily: fonts.uiBold, marginTop: 2 }}>{TODAY_LABEL}</Text>
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 0 }}>
           {/* notifications bell + unread badge */}
           <Pressable
             onPress={() => router.push('/notifications')}
@@ -304,7 +305,7 @@ export default function Home() {
           </Text>
         }
         renderItem={({ item }) => (
-          <TaskRow item={item} accent={accent} onToggle={toggle} onEdit={openEdit} dragEnabled={reorderable} />
+          <TaskRow item={item} accent={accent} onToggle={toggle} onToggleSub={toggleSubtask} onEdit={openEdit} dragEnabled={reorderable} />
         )}
       />
 
@@ -318,26 +319,24 @@ function TaskRow({
   item,
   accent,
   onToggle,
+  onToggleSub,
   onEdit,
   dragEnabled,
 }: {
   item: Task;
   accent: string;
   onToggle: (id: string) => void;
+  onToggleSub: (taskId: string, subId: string) => void;
   onEdit: (t: Task) => void;
   dragEnabled: boolean;
 }) {
   const drag = useReorderableDrag();
+  const progress = subtaskProgress(item.subtasks);
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 11, backgroundColor: colors.card, borderWidth: 1, borderColor: 'rgba(255,255,255,0.04)', borderRadius: 15, padding: 13 }}>
+    <View style={{ backgroundColor: colors.card, borderWidth: 1, borderColor: 'rgba(255,255,255,0.04)', borderRadius: 15, padding: 13 }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 11 }}>
       <Pressable onPress={() => onToggle(item.id)} hitSlop={8}>
-        <View style={{ width: 22, height: 22, borderRadius: 7, borderWidth: 2, borderColor: item.done ? accent : '#3a3a45', backgroundColor: item.done ? accent : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
-          {item.done && (
-            <Svg width={13} height={13} viewBox="0 0 13 13">
-              <Path d="M2.5 6.5 5.5 9.5 10.5 3.5" fill="none" stroke="#fff" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
-            </Svg>
-          )}
-        </View>
+        <Check done={item.done} accent={accent} />
       </Pressable>
 
       <Pressable onPress={() => onEdit(item)} style={{ flex: 1 }}>
@@ -348,7 +347,7 @@ function TaskRow({
           {!!item.repeat && <Icon name="flame" size={11} color={colors.textFaint} />}
         </View>
         <Text style={{ fontSize: 12, color: colors.textFaint, marginTop: 2, fontFamily: fonts.mono }}>
-          {item.time}{item.repeat ? ` · ${item.repeat}` : ''}
+          {item.time}{item.repeat ? ` · ${item.repeat}` : ''}{progress ? ` · ${progress}` : ''}
         </Text>
       </Pressable>
 
@@ -361,6 +360,8 @@ function TaskRow({
           <Icon name="grip" size={18} color={colors.textFaint} />
         </Pressable>
       )}
+    </View>
+    <SubtaskList items={item.subtasks} accent={accent} onToggle={(sid) => onToggleSub(item.id, sid)} />
     </View>
   );
 }

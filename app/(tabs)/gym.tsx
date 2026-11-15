@@ -1,4 +1,3 @@
-import * as DocumentPicker from 'expo-document-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
@@ -16,7 +15,6 @@ import { Notifications, scheduleAt } from '../../services/notifications';
 import { LiveSet, useGym } from '../../store/gym';
 import { useNotifications } from '../../store/notifications';
 import { useSettings } from '../../store/settings';
-import { usePlayer } from '../../store/player';
 import { useToday } from '../../store/today';
 import { useWeight } from '../../store/weight';
 import { useAccent, withAlpha } from '../../theme/AccentContext';
@@ -93,15 +91,7 @@ export default function Gym() {
     restNotifId.current = id;
   };
 
-  // playlist (real local-file player) + modals
-  const tracks = usePlayer((s) => s.tracks);
-  const playing = usePlayer((s) => s.playing);
-  const trackIndex = usePlayer((s) => s.index);
-  const playerReady = usePlayer((s) => s.ready);
-  const shuffle = usePlayer((s) => s.shuffle);
-  const playerApi = usePlayer();
   const [programModal, setProgramModal] = useState(false);
-  const [importModal, setImportModal] = useState(false);
 
   // body weight log
   const weights = useWeight((s) => s.weights);
@@ -109,27 +99,6 @@ export default function Gym() {
   const [weightSheet, setWeightSheet] = useState(false);
 
   const { refreshing, onRefresh } = useRefresh([useGym.getState().load, useWeight.getState().load]);
-
-  // load saved playlist once
-  useEffect(() => {
-    if (!playerReady) playerApi.load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // pick audio files from device storage (works in Expo Go — no extra permission)
-  const pickAudio = async () => {
-    const res = await DocumentPicker.getDocumentAsync({
-      type: 'audio/*',
-      multiple: true,
-      copyToCacheDirectory: true,
-    });
-    if (res.canceled) return;
-    playerApi.addTracks(
-      res.assets.map((a) => ({ uri: a.uri, name: a.name?.replace(/\.[^.]+$/, '') ?? 'Track' })),
-    );
-  };
-
-  const currentTrack = tracks[trackIndex];
 
   const log = useGym((s) => s.sessions);
 
@@ -716,48 +685,6 @@ export default function Gym() {
             </>
             )}
 
-            {/* playlist — real local-file player */}
-            <View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 11 }}>
-                <Text style={{ fontSize: 12, color: colors.textFainter, fontFamily: fonts.uiSemi, letterSpacing: 0.8, textTransform: 'uppercase' }}>Playlist</Text>
-                <Pressable onPress={() => setImportModal(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                  <Icon name="plus" size={13} color={accent} />
-                  <Text style={{ color: accent, fontFamily: fonts.uiSemi, fontSize: 12.5 }}>{tracks.length ? 'Manage' : 'Import'}</Text>
-                </Pressable>
-              </View>
-
-              {tracks.length === 0 ? (
-                <Pressable onPress={pickAudio} style={{ borderWidth: 1, borderColor: withAlpha(accent, 40), borderStyle: 'dashed', borderRadius: 20, padding: 22, alignItems: 'center', gap: 6 }}>
-                  <Icon name="play" size={22} color={accent} />
-                  <Text style={{ color: colors.textSoft, fontFamily: fonts.uiSemi, fontSize: 14 }}>Import music from your device</Text>
-                  <Text style={{ color: colors.textFaint, fontFamily: fonts.ui, fontSize: 12 }}>Pick audio files from Downloads/Files</Text>
-                </Pressable>
-              ) : (
-                <LinearGradient colors={['#1b1726', '#141119']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 20, padding: 14, borderWidth: 1, borderColor: colors.borderSoft }}>
-                  <LinearGradient colors={[accent, '#3a2a7e']} style={{ width: 54, height: 54, borderRadius: 13, alignItems: 'center', justifyContent: 'center' }}>
-                    <Icon name="play" size={20} color="#fff" />
-                  </LinearGradient>
-                  <View style={{ flex: 1 }}>
-                    <Text numberOfLines={1} style={{ fontSize: 14.5, color: colors.textMid, fontFamily: fonts.uiSemi }}>{currentTrack?.name ?? 'Tap play'}</Text>
-                    <Text style={{ fontSize: 12, color: colors.textDim, fontFamily: fonts.ui, marginTop: 2 }}>{tracks.length} track{tracks.length > 1 ? 's' : ''}</Text>
-                  </View>
-                  <Pressable onPress={playerApi.prev} hitSlop={8} style={{ padding: 4 }}>
-                    <Icon name="chevron" size={16} color={colors.textMuted} />
-                  </Pressable>
-                  <Pressable onPress={playerApi.toggle} style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' }}>
-                    <Icon name={playing ? 'pause' : 'play'} size={16} color="#13131a" />
-                  </Pressable>
-                  <View style={{ transform: [{ rotate: '180deg' }] }}>
-                    <Pressable onPress={playerApi.next} hitSlop={8} style={{ padding: 4 }}>
-                      <Icon name="chevron" size={16} color={colors.textMuted} />
-                    </Pressable>
-                  </View>
-                  <Pressable onPress={playerApi.toggleShuffle} hitSlop={8} style={{ padding: 4 }}>
-                    <Icon name="shuffle" size={16} color={shuffle ? accent : colors.textFaint} />
-                  </Pressable>
-                </LinearGradient>
-              )}
-            </View>
           </>
         ) : (
           <>
@@ -999,36 +926,6 @@ export default function Gym() {
         </ScrollView>
       </Sheet>
 
-      {/* PLAYLIST MANAGER — import + list local audio files */}
-      <Sheet visible={importModal} onClose={() => setImportModal(false)} title="Your playlist" subtitle="Music stored on your device">
-        <Pressable onPress={pickAudio} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: accent, borderRadius: 14, paddingVertical: 14, marginBottom: 14 }}>
-          <Icon name="plus" size={16} color="#fff" />
-          <Text style={{ color: '#fff', fontFamily: fonts.uiBold, fontSize: 14 }}>Add audio from device</Text>
-        </Pressable>
-
-        {tracks.length === 0 ? (
-          <Text style={{ color: colors.textFaint, fontFamily: fonts.ui, textAlign: 'center', paddingVertical: 16 }}>No tracks yet. Add some MP3/audio files.</Text>
-        ) : (
-          <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
-            <View style={{ gap: 8 }}>
-              {tracks.map((t, i) => {
-                const on = i === trackIndex;
-                return (
-                  <View key={t.uri} style={{ flexDirection: 'row', alignItems: 'center', gap: 11, backgroundColor: on ? withAlpha(accent, 12) : colors.card, borderWidth: 1, borderColor: on ? accent : colors.border, borderRadius: 13, padding: 11 }}>
-                    <Pressable onPress={() => playerApi.playIndex(i)} style={{ width: 34, height: 34, borderRadius: 9, backgroundColor: withAlpha(accent, 16), alignItems: 'center', justifyContent: 'center' }}>
-                      <Icon name={on && playing ? 'pause' : 'play'} size={15} color={accent} />
-                    </Pressable>
-                    <Text numberOfLines={1} style={{ flex: 1, color: colors.textMid, fontFamily: fonts.uiSemi, fontSize: 13.5 }}>{t.name}</Text>
-                    <Pressable onPress={() => playerApi.removeTrack(t.uri)} hitSlop={6} style={{ width: 26, height: 26, borderRadius: 8, backgroundColor: 'rgba(239,68,68,0.14)', alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ color: colors.red, fontSize: 16, lineHeight: 18 }}>×</Text>
-                    </Pressable>
-                  </View>
-                );
-              })}
-            </View>
-          </ScrollView>
-        )}
-      </Sheet>
     </SafeAreaView>
   );
 }

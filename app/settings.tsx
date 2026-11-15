@@ -5,11 +5,11 @@ import * as IntentLauncher from 'expo-intent-launcher';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, Image, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Alert, Image, Linking, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Icon } from '../components/Icon';
-import { changePassword, errorMessage } from '../services/api';
+import { BASE_URL, changePassword, deleteAccount, errorMessage } from '../services/api';
 import { ensurePermission, Notifications } from '../services/notifications';
 import { useAuth } from '../store/auth';
 import { PROGRESS_OPTIONS, REST_OPTIONS, useSettings } from '../store/settings';
@@ -61,10 +61,9 @@ export default function Settings() {
   // profile photo: pick → crop square → shrink to 256px JPEG → base64 → save
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const pickPhoto = async () => {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) return Alert.alert('Permission needed', 'Allow photo access to set a profile picture.');
+    // system photo picker: no storage/media permission needed
     const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [1, 1],
       quality: 1,
@@ -120,6 +119,36 @@ export default function Settings() {
   const [newPw, setNewPw] = useState('');
   const [confirmPw, setConfirmPw] = useState('');
   const [savingPw, setSavingPw] = useState(false);
+  // delete account: password-confirmed, then a final "are you sure"
+  const [deletePw, setDeletePw] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const confirmDelete = () => {
+    if (!deletePw) return Alert.alert('Password needed', 'Enter your password to delete your account.');
+    Alert.alert(
+      'Delete account?',
+      'This permanently deletes your account and all your tasks, notes, workouts and other data. It cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleting(true);
+            try {
+              await deleteAccount(deletePw);
+              await logout();
+              router.replace('/login');
+            } catch (e) {
+              Alert.alert('Error', errorMessage(e, 'Could not delete the account.'));
+            } finally {
+              setDeleting(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const savePassword = async () => {
     if (!currentPw || !newPw) return Alert.alert('Missing fields', 'Enter your current and new password.');
     if (newPw.length < 8) return Alert.alert('Too short', 'New password must be at least 8 characters.');
@@ -341,6 +370,34 @@ export default function Settings() {
 
         <Pressable onPress={signOut} style={{ backgroundColor: withAlpha(colors.red, 12), borderWidth: 1, borderColor: withAlpha(colors.red, 30), borderRadius: 15, paddingVertical: 15, alignItems: 'center' }}>
           <Text style={{ color: colors.red, fontFamily: fonts.uiBold, fontSize: 14.5 }}>Sign out</Text>
+        </Pressable>
+
+        {/* delete account (required by Google Play) */}
+        <Section title="Delete account">
+          <View style={{ backgroundColor: colors.card, borderWidth: 1, borderColor: withAlpha(colors.red, 30), borderRadius: 15, padding: 14, gap: 10 }}>
+            <Text style={{ color: colors.textDim, fontFamily: fonts.ui, fontSize: 13 }}>
+              Permanently deletes your account and all of its data.
+            </Text>
+            <TextInput
+              value={deletePw}
+              onChangeText={setDeletePw}
+              placeholder="Your password"
+              placeholderTextColor={colors.textFaint}
+              secureTextEntry
+              style={{ color: colors.text, fontFamily: fonts.ui, fontSize: 14.5, paddingVertical: 4 }}
+            />
+            <Pressable
+              onPress={confirmDelete}
+              disabled={deleting}
+              style={{ backgroundColor: colors.red, borderRadius: 11, paddingVertical: 11, alignItems: 'center', opacity: deleting ? 0.6 : 1 }}
+            >
+              <Text style={{ color: '#fff', fontFamily: fonts.uiBold, fontSize: 13.5 }}>{deleting ? 'Deleting…' : 'Delete account'}</Text>
+            </Pressable>
+          </View>
+        </Section>
+
+        <Pressable onPress={() => Linking.openURL(`${BASE_URL.replace(/\/api$/, '')}/privacy/`)} style={{ alignItems: 'center', paddingTop: 4 }}>
+          <Text style={{ color: colors.textDim, fontFamily: fonts.uiSemi, fontSize: 13 }}>Privacy policy</Text>
         </Pressable>
 
         <Text style={{ textAlign: 'center', color: '#3f3f48', fontSize: 12, fontFamily: fonts.mono, paddingTop: 4 }}>

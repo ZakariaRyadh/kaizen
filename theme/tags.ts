@@ -18,6 +18,8 @@ export const REPEATS = [
 
 export type RepeatKey = (typeof REPEATS)[number]['key'];
 
+export type Subtask = { id: string; title: string; done: boolean };
+
 export type Task = {
   id: string;
   title: string;
@@ -27,4 +29,5 @@ export type Task = {
   repeat: RepeatKey;
   done: boolean;
   date: string; // 'YYYY-MM-DD' — which day this task belongs to
+  subtasks: Subtask[];
 };

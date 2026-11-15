@@ -23,6 +23,7 @@ const toApi = (t: Task) => ({
   repeat: t.repeat,
   done: t.done,
   due_date: t.date,
+  subtasks: t.subtasks,
 });
 const fromApi = (r: any): Task => ({
   id: String(r.id),
@@ -33,6 +34,7 @@ const fromApi = (r: any): Task => ({
   repeat: r.repeat,
   done: r.done,
   date: r.due_date ?? todayIso(),
+  subtasks: Array.isArray(r.subtasks) ? r.subtasks : [],
 });
 
 type State = {
@@ -42,6 +44,7 @@ type State = {
   upsert: (t: Task) => Promise<void>;
   remove: (id: string) => Promise<void>;
   toggle: (id: string) => Promise<void>;
+  toggleSubtask: (taskId: string, subId: string) => Promise<void>;
   setTasks: (tasks: Task[]) => void; // local-only reorder
 };
 
@@ -77,9 +80,23 @@ export const useTasks = create<State>((set, get) => ({
   toggle: async (id) => {
     const t = get().tasks.find((x) => x.id === id);
     if (!t) return;
-    const next = { ...t, done: !t.done };
+    const done = !t.done;
+    // finishing a task finishes its subtasks; un-finishing leaves them alone
+    const subtasks = done ? t.subtasks.map((st) => ({ ...st, done: true })) : t.subtasks;
+    const next = { ...t, done, subtasks };
     set((s) => ({ tasks: s.tasks.map((x) => (x.id === id ? next : x)) }));
-    await apiPatch(`/tasks/${id}/`, { done: next.done }).catch(() => {});
+    await apiPatch(`/tasks/${id}/`, { done, subtasks }).catch(() => {});
+  },
+
+  // tick one subtask; the task is done exactly when all its subtasks are
+  toggleSubtask: async (taskId, subId) => {
+    const t = get().tasks.find((x) => x.id === taskId);
+    if (!t) return;
+    const subtasks = t.subtasks.map((st) => (st.id === subId ? { ...st, done: !st.done } : st));
+    const done = subtasks.length > 0 && subtasks.every((st) => st.done);
+    const next = { ...t, subtasks, done };
+    set((s) => ({ tasks: s.tasks.map((x) => (x.id === taskId ? next : x)) }));
+    await apiPatch(`/tasks/${taskId}/`, { subtasks, done }).catch(() => {});
   },
 
   setTasks: (tasks) => set({ tasks }),

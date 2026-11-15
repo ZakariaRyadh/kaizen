@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CalEvent, EventSheet, PRIORITY_META, Priority } from '../../components/EventSheet';
 import { Icon } from '../../components/Icon';
+import { Check, SubtaskList, subtaskProgress } from '../../components/SubtaskList';
 import { TaskSheet } from '../../components/TaskSheet';
 import { useRefresh } from '../../hooks/useRefresh';
 import { useEvents } from '../../store/events';
@@ -238,19 +238,18 @@ export default function Calendar() {
           </View>
           <View style={{ gap: 8 }}>
             {dayTasks.map((t) => (
-              <View key={t.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 11, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 15, padding: 13 }}>
+              <View key={t.id} style={{ backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 15, padding: 13 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 11 }}>
                 <Pressable onPress={() => taskStore.toggle(t.id)} hitSlop={8}>
-                  <View style={{ width: 22, height: 22, borderRadius: 7, borderWidth: 2, borderColor: t.done ? accent : '#3a3a45', backgroundColor: t.done ? accent : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
-                    {t.done && (
-                      <Svg width={13} height={13} viewBox="0 0 13 13"><Path d="M2.5 6.5 5.5 9.5 10.5 3.5" fill="none" stroke="#fff" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" /></Svg>
-                    )}
-                  </View>
+                  <Check done={t.done} accent={accent} />
                 </Pressable>
                 <Pressable onPress={() => openEditTask(t)} style={{ flex: 1 }}>
                   <Text style={{ fontSize: 14.5, color: t.done ? colors.textFaint : colors.textMid, fontFamily: fonts.ui, textDecorationLine: t.done ? 'line-through' : 'none' }}>{t.title}</Text>
-                  <Text style={{ fontSize: 12, color: colors.textFaint, fontFamily: fonts.mono, marginTop: 2 }}>{t.time}</Text>
+                  <Text style={{ fontSize: 12, color: colors.textFaint, fontFamily: fonts.mono, marginTop: 2 }}>{t.time}{t.subtasks.length ? ` · ${subtaskProgress(t.subtasks)}` : ''}</Text>
                 </Pressable>
                 <Text style={{ fontSize: 11, fontFamily: fonts.uiSemi, color: t.tagColor, backgroundColor: withAlpha(t.tagColor, 14), paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8, overflow: 'hidden' }}>{t.tag}</Text>
+              </View>
+              <SubtaskList items={t.subtasks} accent={accent} onToggle={(sid) => taskStore.toggleSubtask(t.id, sid)} />
               </View>
             ))}
             {dayTasks.length === 0 && (
