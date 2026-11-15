@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Icon, IconName } from '../components/Icon';
@@ -28,10 +28,37 @@ function ago(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
+// where tapping an entry takes you
+const ROUTE: Record<string, string> = { task: '/', workout: '/gym', rest: '/gym', learning: '/learn', weekly: '/' };
+
+// Today / Yesterday / Earlier, by local day
+function groupOf(iso: string): string {
+  const d = new Date(iso);
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  if (d >= start) return 'Today';
+  start.setDate(start.getDate() - 1);
+  if (d >= start) return 'Yesterday';
+  return 'Earlier';
+}
+
 export default function NotificationsScreen() {
   const { accent } = useAccent();
   const items = useNotifications((s) => s.items);
-  const { markRead, markAllRead, clear } = useNotifications();
+  const { markRead, markAllRead, clear, remove } = useNotifications();
+  const groups = ['Today', 'Yesterday', 'Earlier']
+    .map((g) => ({ title: g, items: items.filter((n) => groupOf(n.createdAt) === g) }))
+    .filter((g) => g.items.length);
+  const confirmClear = () =>
+    Alert.alert('Clear all notifications?', 'This removes everything from your inbox.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Clear', style: 'destructive', onPress: () => clear() },
+    ]);
+  const open = (id: string, kind: string, read: boolean) => {
+    if (!read) markRead(id);
+    const path = ROUTE[kind];
+    if (path) router.navigate(path as any);
+  };
   const hasUnread = items.some((n) => !n.read);
 
   return (
@@ -47,7 +74,7 @@ export default function NotificationsScreen() {
           </Pressable>
           <Text style={{ fontSize: 25, color: colors.text, fontFamily: fonts.uiBold, flex: 1 }}>Notifications</Text>
           {items.length > 0 && (
-            <Pressable onPress={clear} hitSlop={8}>
+            <Pressable onPress={confirmClear} hitSlop={8}>
               <Text style={{ color: colors.textDim, fontFamily: fonts.uiSemi, fontSize: 13 }}>Clear</Text>
             </Pressable>
           )}
@@ -67,17 +94,27 @@ export default function NotificationsScreen() {
             <Icon name="bell" size={38} color={colors.textFainter} />
             <Text style={{ color: colors.textFaint, fontFamily: fonts.ui, fontSize: 14 }}>No notifications yet.</Text>
             <Text style={{ color: colors.textFainter, fontFamily: fonts.ui, fontSize: 12.5, textAlign: 'center' }}>
-              Reminders for tasks, workouts and learning will show up here.
+              Reminders for tasks, workouts and learning show up here, even the ones that fired while the app was closed.
             </Text>
           </View>
         ) : (
-          <View style={{ gap: 9 }}>
-            {items.map((n) => {
+          <View style={{ gap: 18 }}>
+            {groups.map((g) => (
+            <View key={g.title} style={{ gap: 9 }}>
+            <Text style={{ fontSize: 12, color: colors.textFainter, fontFamily: fonts.uiSemi, letterSpacing: 0.8, textTransform: 'uppercase' }}>{g.title}</Text>
+            {g.items.map((n) => {
               const meta = KIND_META[n.kind] ?? KIND_META.system;
               return (
                 <Pressable
                   key={n.id}
-                  onPress={() => !n.read && markRead(n.id)}
+                  onPress={() => open(n.id, n.kind, n.read)}
+                  onLongPress={() =>
+                    Alert.alert('Delete notification?', n.title, [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: 'Delete', style: 'destructive', onPress: () => remove(n.id) },
+                    ])
+                  }
+                  delayLongPress={350}
                   style={{
                     flexDirection: 'row',
                     gap: 13,
@@ -93,7 +130,7 @@ export default function NotificationsScreen() {
                   </View>
                   <View style={{ flex: 1 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <Text style={{ color: colors.text, fontFamily: fonts.uiSemi, fontSize: 14.5 }}>{n.title}</Text>
+                      <Text numberOfLines={1} style={{ flex: 1, color: colors.text, fontFamily: fonts.uiSemi, fontSize: 14.5, marginRight: 8 }}>{n.title}</Text>
                       <Text style={{ color: colors.textFaint, fontFamily: fonts.mono, fontSize: 11 }}>{ago(n.createdAt)}</Text>
                     </View>
                     {!!n.body && <Text style={{ color: colors.textMuted, fontFamily: fonts.ui, fontSize: 13, marginTop: 3 }}>{n.body}</Text>}
@@ -102,6 +139,8 @@ export default function NotificationsScreen() {
                 </Pressable>
               );
             })}
+            </View>
+            ))}
           </View>
         )}
       </ScrollView>

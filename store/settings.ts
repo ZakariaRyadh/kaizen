@@ -1,8 +1,6 @@
 import { create } from 'zustand';
 
-import { syncReminders } from '../lib/reminders';
 import { apiGet, apiPatch } from '../services/api';
-import { useTasks } from './tasks';
 
 export const DEFAULT_WIDGETS: Record<string, boolean> = {
   today: true,
@@ -22,6 +20,7 @@ export const DEFAULT_NOTIFS: Record<string, boolean> = {
 export const REST_OPTIONS = [60, 90, 120, 180];
 export const DEFAULT_REST = 90;
 export const PROGRESS_OPTIONS = [7, 14, 30]; // days
+export const LEAD_OPTIONS = [0, 5, 15, 30]; // minutes before a task
 export const DEFAULT_PROGRESS = 14;
 
 type State = {
@@ -30,12 +29,14 @@ type State = {
   accent: string | null;
   restSeconds: number;
   progressDays: number;
+  taskLead: number;
   loaded: boolean;
   load: () => Promise<{ accent: string | null }>;
   setWidget: (key: string, on: boolean) => void;
   setNotif: (key: string, on: boolean) => void;
   setRest: (seconds: number) => void;
   setProgress: (days: number) => void;
+  setTaskLead: (min: number) => void;
   pushAccent: (hex: string) => void;
 };
 
@@ -54,6 +55,7 @@ export const useSettings = create<State>((set, get) => ({
   accent: null,
   restSeconds: DEFAULT_REST,
   progressDays: DEFAULT_PROGRESS,
+  taskLead: 0,
   loaded: false,
 
   load: async () => {
@@ -61,7 +63,7 @@ export const useSettings = create<State>((set, get) => ({
       const r = await apiGet<any>('/settings/');
       const widgets = { ...DEFAULT_WIDGETS, ...(r.widgets ?? {}) };
       const notifs = { ...DEFAULT_NOTIFS, ...(r.notifications ?? {}) };
-      set({ widgets, notifs, accent: r.accent ?? null, restSeconds: r.rest_seconds ?? DEFAULT_REST, progressDays: r.progress_days ?? DEFAULT_PROGRESS, loaded: true });
+      set({ widgets, notifs, accent: r.accent ?? null, restSeconds: r.rest_seconds ?? DEFAULT_REST, progressDays: r.progress_days ?? DEFAULT_PROGRESS, taskLead: r.task_lead_min ?? 0, loaded: true });
       return { accent: r.accent ?? null };
     } catch {
       set({ loaded: true });
@@ -79,8 +81,6 @@ export const useSettings = create<State>((set, get) => ({
     const notifs = { ...get().notifs, [key]: on };
     set({ notifs });
     persist({ accent: get().accent, widgets: get().widgets, notifs, restSeconds: get().restSeconds, progressDays: get().progressDays });
-    // reschedule device reminders to match the new toggles
-    syncReminders(useTasks.getState().tasks, notifs).catch(() => {});
   },
 
   setRest: (seconds) => {
@@ -91,6 +91,11 @@ export const useSettings = create<State>((set, get) => ({
   setProgress: (days) => {
     set({ progressDays: days });
     persist({ accent: get().accent, widgets: get().widgets, notifs: get().notifs, restSeconds: get().restSeconds, progressDays: days });
+  },
+
+  setTaskLead: (min) => {
+    set({ taskLead: min });
+    apiPatch('/settings/', { task_lead_min: min }).catch(() => {});
   },
 
   pushAccent: (hex) => {

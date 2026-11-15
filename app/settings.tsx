@@ -12,7 +12,8 @@ import { Icon } from '../components/Icon';
 import { BASE_URL, changePassword, deleteAccount, errorMessage } from '../services/api';
 import { ensurePermission, Notifications } from '../services/notifications';
 import { useAuth } from '../store/auth';
-import { PROGRESS_OPTIONS, REST_OPTIONS, useSettings } from '../store/settings';
+import { requestSync } from '../lib/reminders';
+import { LEAD_OPTIONS, PROGRESS_OPTIONS, REST_OPTIONS, useSettings } from '../store/settings';
 import { useAccent, withAlpha } from '../theme/AccentContext';
 import { accentSwatches, colors, fonts } from '../theme/colors';
 
@@ -28,17 +29,17 @@ const WIDGET_META: Meta[] = [
 ];
 
 const NOTIF_META: Meta[] = [
-  { key: 'tasks', label: 'Task reminders', desc: 'When a timed task is due' },
-  { key: 'workout', label: 'Workout time', desc: 'Daily training nudge' },
+  { key: 'tasks', label: 'Task reminders', desc: 'For tasks with a time, with a Mark done button' },
+  { key: 'workout', label: 'Workout time', desc: 'Daily at 17:00, skipped once you trained' },
   { key: 'rest', label: 'Rest timer', desc: 'Lock-screen countdown + alert when rest ends' },
-  { key: 'learning', label: 'Learning nudge', desc: 'Daily reminder to study' },
-  { key: 'weekly', label: 'Weekly summary', desc: 'Sunday recap' },
+  { key: 'learning', label: 'Learning nudge', desc: 'Daily at 19:30, skipped once you studied' },
+  { key: 'weekly', label: 'Weekly recap', desc: 'Sundays at 18:00' },
 ];
 
 export default function Settings() {
   const { accent, setAccent } = useAccent();
   const { user, logout, updateName, setAvatar } = useAuth();
-  const { widgets, notifs, restSeconds, progressDays, setWidget, setNotif, setRest, setProgress, pushAccent } = useSettings();
+  const { widgets, notifs, restSeconds, progressDays, taskLead, setWidget, setNotif, setRest, setProgress, setTaskLead, pushAccent } = useSettings();
 
   // OS notification permission status (so toggles aren't a silent no-op)
   const [permGranted, setPermGranted] = useState<boolean | null>(null);
@@ -48,7 +49,8 @@ export default function Settings() {
   const enableNotifs = async () => {
     const ok = await ensurePermission();
     setPermGranted(ok);
-    if (!ok) Alert.alert('Blocked', 'Enable notifications for Kaizen in your phone settings.');
+    if (ok) requestSync(0);
+    else Linking.openSettings().catch(() => Alert.alert('Blocked', 'Enable notifications for Kaizen in your phone settings.'));
   };
   // Android 12+: exact-alarm scheduling needs a separate, manually-granted permission —
   // without it, reminders silently degrade to inexact (often "only fires once you reopen the app").
@@ -353,7 +355,24 @@ export default function Settings() {
           )}
 
           {NOTIF_META.map((m) => (
-            <ToggleRow key={m.key} label={m.label} desc={m.desc} on={notifs[m.key] !== false} accent={accent} onToggle={() => setNotif(m.key, !(notifs[m.key] !== false))} />
+            <View key={m.key} style={{ gap: 8 }}>
+              <ToggleRow label={m.label} desc={m.desc} on={notifs[m.key] !== false} accent={accent} onToggle={() => setNotif(m.key, !(notifs[m.key] !== false))} />
+              {m.key === 'tasks' && notifs.tasks !== false && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingLeft: 4 }}>
+                  <Text style={{ color: colors.textFaint, fontFamily: fonts.ui, fontSize: 12.5 }}>Remind me</Text>
+                  <View style={{ flex: 1, flexDirection: 'row', gap: 6, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 3 }}>
+                    {LEAD_OPTIONS.map((min) => {
+                      const sel = taskLead === min;
+                      return (
+                        <Pressable key={min} onPress={() => setTaskLead(min)} style={{ flex: 1, paddingVertical: 8, borderRadius: 9, alignItems: 'center', backgroundColor: sel ? accent : 'transparent' }}>
+                          <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={{ color: sel ? '#fff' : colors.textMuted, fontFamily: fonts.uiSemi, fontSize: 12 }}>{min ? `${min} min early` : 'On time'}</Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
+            </View>
           ))}
         </Section>
 

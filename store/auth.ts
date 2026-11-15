@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 import { apiLogin, apiLogout, apiRegister, errorMessage, getMe, updateAvatar, updateMe } from '../services/api';
+import { resetReminders } from '../lib/reminders';
 import { cancelAll } from '../services/notifications';
 import { getAccessToken } from '../services/storage';
 import { useEvents } from './events';
@@ -80,6 +81,7 @@ export const useAuth = create<AuthState>((set) => ({
   logout: async () => {
     await apiLogout();
     await cancelAll().catch(() => {}); // scheduled reminders belong to this account
+    await resetReminders();
     resetStores();
     set({ isLoggedIn: false, user: null });
   },

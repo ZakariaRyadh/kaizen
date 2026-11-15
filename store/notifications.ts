@@ -26,7 +26,8 @@ type State = {
   loaded: boolean;
   unread: () => number;
   load: () => Promise<void>;
-  add: (title: string, body: string, kind: NotifKind) => Promise<void>;
+  add: (title: string, body: string, kind: NotifKind, at?: string) => Promise<void>;
+  remove: (id: string) => Promise<void>;
   markRead: (id: string) => Promise<void>;
   markAllRead: () => Promise<void>;
   clear: () => Promise<void>;
@@ -43,13 +44,19 @@ export const useNotifications = create<State>((set, get) => ({
     set({ items: rows.map(fromApi), loaded: true });
   },
 
-  add: async (title, body, kind) => {
-    const temp: Notif = { id: `tmp-${Date.now()}`, title, body, kind, read: false, createdAt: new Date().toISOString() };
-    set((s) => ({ items: [temp, ...s.items] }));
+  add: async (title, body, kind, at) => {
+    const temp: Notif = { id: `tmp-${Date.now()}-${Math.random()}`, title, body, kind, read: false, createdAt: at ?? new Date().toISOString() };
+    // newest first, by the time it fired
+    set((s) => ({ items: [temp, ...s.items].sort((a, b) => b.createdAt.localeCompare(a.createdAt)) }));
     try {
-      const saved = fromApi(await apiPost('/notifications/', { title, body, kind }));
+      const saved = fromApi(await apiPost('/notifications/', { title, body, kind, ...(at ? { at } : {}) }));
       set((s) => ({ items: s.items.map((n) => (n.id === temp.id ? saved : n)) }));
     } catch {}
+  },
+
+  remove: async (id) => {
+    set((s) => ({ items: s.items.filter((n) => n.id !== id) }));
+    if (!id.startsWith('tmp-')) await apiDelete(`/notifications/${id}/`).catch(() => {});
   },
 
   markRead: async (id) => {
