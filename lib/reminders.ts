@@ -1,4 +1,4 @@
-import { cancelAll, ensurePermission, scheduleAt, scheduleDaily, scheduleWeekly } from '../services/notifications';
+import { cancelReminders, ensurePermission, scheduleAt, scheduleDaily, scheduleWeekly } from '../services/notifications';
 import { todayIso } from '../store/today';
 import type { Task } from '../theme/tags';
 
@@ -24,7 +24,7 @@ export async function syncReminders(tasks: Task[], notifs: Notifs): Promise<void
   const granted = await ensurePermission();
   if (!granted) return;
 
-  await cancelAll(); // wipe previous schedule, then rebuild
+  await cancelReminders(); // wipe previous schedule (not a running rest timer), then rebuild
 
   // ---- task reminders: fire at each timed, unfinished task today ----
   if (on(notifs, 'tasks')) {

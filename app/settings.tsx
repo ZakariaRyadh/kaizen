@@ -28,9 +28,9 @@ const WIDGET_META: Meta[] = [
 ];
 
 const NOTIF_META: Meta[] = [
-  { key: 'tasks', label: 'Task reminders', desc: 'Before a task is due' },
+  { key: 'tasks', label: 'Task reminders', desc: 'When a timed task is due' },
   { key: 'workout', label: 'Workout time', desc: 'Daily training nudge' },
-  { key: 'rest', label: 'Rest timer done', desc: 'When rest finishes' },
+  { key: 'rest', label: 'Rest timer', desc: 'Lock-screen countdown + alert when rest ends' },
   { key: 'learning', label: 'Learning nudge', desc: 'Daily reminder to study' },
   { key: 'weekly', label: 'Weekly summary', desc: 'Sunday recap' },
 ];
@@ -106,7 +106,7 @@ export default function Settings() {
     setSavingName(true);
     try {
       await updateName(n);
-      Alert.alert('Saved', 'Username updated.');
+      Alert.alert('Saved', 'Name updated.');
     } catch {
       Alert.alert('Error', 'Could not update username.');
     } finally {
@@ -114,7 +114,9 @@ export default function Settings() {
     }
   };
 
-  // password
+  // password + delete forms stay folded until tapped
+  const [pwOpen, setPwOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [currentPw, setCurrentPw] = useState('');
   const [newPw, setNewPw] = useState('');
   const [confirmPw, setConfirmPw] = useState('');
@@ -159,6 +161,7 @@ export default function Settings() {
       setCurrentPw('');
       setNewPw('');
       setConfirmPw('');
+      setPwOpen(false);
       Alert.alert('Saved', 'Password updated.');
     } catch (e: any) {
       Alert.alert('Error', errorMessage(e, 'Could not change password.'));
@@ -195,37 +198,37 @@ export default function Settings() {
               <Icon name="plus" size={11} color="#fff" />
             </View>
           </Pressable>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 16, color: colors.textMid, fontFamily: fonts.uiSemi }}>{displayName}</Text>
-            <Text style={{ fontSize: 13, color: colors.textDim, fontFamily: fonts.ui, marginTop: 1 }}>{user?.email ?? 'Not signed in'}</Text>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            {/* tap the name to rename; Save appears once it changes */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <TextInput
+                value={name}
+                onChangeText={setName}
+                onSubmitEditing={saveName}
+                placeholder="Display name"
+                placeholderTextColor={colors.textFaint}
+                style={{ flex: 1, fontSize: 16, color: colors.textMid, fontFamily: fonts.uiSemi, paddingVertical: 2 }}
+              />
+              {name.trim() !== displayName && !!name.trim() && (
+                <Pressable onPress={saveName} disabled={savingName} style={{ backgroundColor: accent, borderRadius: 9, paddingHorizontal: 11, paddingVertical: 6, opacity: savingName ? 0.6 : 1 }}>
+                  <Text style={{ color: '#fff', fontFamily: fonts.uiSemi, fontSize: 12 }}>{savingName ? '…' : 'Save'}</Text>
+                </Pressable>
+              )}
+            </View>
+            <Text numberOfLines={1} style={{ fontSize: 13, color: colors.textDim, fontFamily: fonts.ui, marginTop: 1 }}>{user?.email ?? 'Not signed in'}</Text>
             <Text style={{ fontSize: 11.5, color: colors.textFaint, fontFamily: fonts.ui, marginTop: 4 }}>
-              {uploadingPhoto ? 'Updating photo…' : 'Tap photo to change'}
+              {uploadingPhoto ? 'Updating photo…' : 'Tap photo or name to change'}
             </Text>
           </View>
         </View>
 
-        {/* username */}
-        <Section title="Username">
-          <View style={{ backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 15, padding: 14, gap: 10 }}>
-            <TextInput
-              value={name}
-              onChangeText={setName}
-              placeholder="Display name"
-              placeholderTextColor={colors.textFaint}
-              style={{ color: colors.text, fontFamily: fonts.uiSemi, fontSize: 15, paddingVertical: 4 }}
-            />
-            <Pressable
-              onPress={saveName}
-              disabled={savingName || !name.trim() || name.trim() === displayName}
-              style={{ backgroundColor: accent, borderRadius: 11, paddingVertical: 11, alignItems: 'center', opacity: savingName || !name.trim() || name.trim() === displayName ? 0.5 : 1 }}
-            >
-              <Text style={{ color: '#fff', fontFamily: fonts.uiBold, fontSize: 13.5 }}>{savingName ? 'Saving…' : 'Save username'}</Text>
-            </Pressable>
-          </View>
-        </Section>
-
         {/* password */}
-        <Section title="Password">
+        <Section title="Account">
+          <Pressable onPress={() => setPwOpen((o) => !o)} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 15, paddingHorizontal: 16, paddingVertical: 15 }}>
+            <Text style={{ flex: 1, fontSize: 14.5, color: colors.textSoft, fontFamily: fonts.uiSemi }}>Change password</Text>
+            <Text style={{ color: colors.textFaint, fontSize: 16 }}>{pwOpen ? '−' : '+'}</Text>
+          </Pressable>
+          {pwOpen && (
           <View style={{ backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 15, padding: 14, gap: 10 }}>
             <TextInput
               value={currentPw}
@@ -260,6 +263,7 @@ export default function Settings() {
               <Text style={{ color: '#fff', fontFamily: fonts.uiBold, fontSize: 13.5 }}>{savingPw ? 'Saving…' : 'Change password'}</Text>
             </Pressable>
           </View>
+          )}
         </Section>
 
         {/* accent color */}
@@ -329,40 +333,25 @@ export default function Settings() {
 
         {/* notifications */}
         <Section title="Notifications">
-          {/* permission status + test */}
-          <View style={{ backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 15, padding: 14, gap: 12 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: permGranted ? colors.green : permGranted === false ? colors.red : colors.textFaint }} />
-              <Text style={{ flex: 1, color: colors.textSoft, fontFamily: fonts.uiSemi, fontSize: 13.5 }}>
-                {permGranted == null ? 'Checking…' : permGranted ? 'Notifications allowed' : 'Notifications blocked'}
-              </Text>
-              {!permGranted && permGranted !== null && (
-                <Pressable onPress={enableNotifs} style={{ backgroundColor: accent, borderRadius: 9, paddingHorizontal: 12, paddingVertical: 7 }}>
-                  <Text style={{ color: '#fff', fontFamily: fonts.uiSemi, fontSize: 12 }}>Enable</Text>
-                </Pressable>
-              )}
+          {permGranted === false && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: withAlpha(colors.red, 10), borderWidth: 1, borderColor: withAlpha(colors.red, 30), borderRadius: 15, padding: 14 }}>
+              <Text style={{ flex: 1, color: colors.textSoft, fontFamily: fonts.uiSemi, fontSize: 13.5 }}>Notifications are blocked</Text>
+              <Pressable onPress={enableNotifs} style={{ backgroundColor: accent, borderRadius: 9, paddingHorizontal: 12, paddingVertical: 7 }}>
+                <Text style={{ color: '#fff', fontFamily: fonts.uiSemi, fontSize: 12 }}>Enable</Text>
+              </Pressable>
             </View>
-          </View>
-
-          {Platform.OS === 'android' && (
-            <>
-              <View style={{ height: 8 }} />
-              <View style={{ backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 15, padding: 14, gap: 8 }}>
-                <Text style={{ color: colors.textSoft, fontFamily: fonts.uiSemi, fontSize: 13.5 }}>
-                  Reminders firing late or only when you open the app?
-                </Text>
-                <Text style={{ color: colors.textFaint, fontFamily: fonts.ui, fontSize: 12 }}>
-                  Android needs a separate "Alarms & reminders" permission for on-time delivery
-                  while the app is closed. Tap below to grant it.
-                </Text>
-                <Pressable onPress={openExactAlarmSettings} style={{ alignSelf: 'flex-start', backgroundColor: accent, borderRadius: 9, paddingHorizontal: 12, paddingVertical: 7, marginTop: 2 }}>
-                  <Text style={{ color: '#fff', fontFamily: fonts.uiSemi, fontSize: 12 }}>Open alarm settings</Text>
-                </Pressable>
-              </View>
-            </>
           )}
 
-          <View style={{ height: 8 }} />
+          {Platform.OS === 'android' && (
+            <Pressable onPress={openExactAlarmSettings} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 15, paddingHorizontal: 16, paddingVertical: 14 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14.5, color: colors.textSoft, fontFamily: fonts.uiSemi }}>Alarms & reminders</Text>
+                <Text style={{ fontSize: 12, color: colors.textFaint, fontFamily: fonts.ui, marginTop: 2 }}>Allow it so reminders fire on time with the app closed</Text>
+              </View>
+              <Text style={{ color: accent, fontFamily: fonts.uiSemi, fontSize: 12.5 }}>Open</Text>
+            </Pressable>
+          )}
+
           {NOTIF_META.map((m) => (
             <ToggleRow key={m.key} label={m.label} desc={m.desc} on={notifs[m.key] !== false} accent={accent} onToggle={() => setNotif(m.key, !(notifs[m.key] !== false))} />
           ))}
@@ -373,7 +362,10 @@ export default function Settings() {
         </Pressable>
 
         {/* delete account (required by Google Play) */}
-        <Section title="Delete account">
+        <Pressable onPress={() => setDeleteOpen((o) => !o)} style={{ alignItems: 'center', paddingVertical: 4 }}>
+          <Text style={{ color: withAlpha(colors.red, 80), fontFamily: fonts.uiSemi, fontSize: 13 }}>Delete account</Text>
+        </Pressable>
+        {deleteOpen && (
           <View style={{ backgroundColor: colors.card, borderWidth: 1, borderColor: withAlpha(colors.red, 30), borderRadius: 15, padding: 14, gap: 10 }}>
             <Text style={{ color: colors.textDim, fontFamily: fonts.ui, fontSize: 13 }}>
               Permanently deletes your account and all of its data.
@@ -391,10 +383,10 @@ export default function Settings() {
               disabled={deleting}
               style={{ backgroundColor: colors.red, borderRadius: 11, paddingVertical: 11, alignItems: 'center', opacity: deleting ? 0.6 : 1 }}
             >
-              <Text style={{ color: '#fff', fontFamily: fonts.uiBold, fontSize: 13.5 }}>{deleting ? 'Deleting…' : 'Delete account'}</Text>
+              <Text style={{ color: '#fff', fontFamily: fonts.uiBold, fontSize: 13.5 }}>{deleting ? 'Deleting…' : 'Delete my account'}</Text>
             </Pressable>
           </View>
-        </Section>
+        )}
 
         <Pressable onPress={() => Linking.openURL(`${BASE_URL.replace(/\/api$/, '')}/privacy/`)} style={{ alignItems: 'center', paddingTop: 4 }}>
           <Text style={{ color: colors.textDim, fontFamily: fonts.uiSemi, fontSize: 13 }}>Privacy policy</Text>

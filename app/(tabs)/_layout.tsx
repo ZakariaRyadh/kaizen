@@ -123,6 +123,7 @@ export default function TabsLayout() {
     const sub = Notifications.addNotificationReceivedListener((evt) => {
       const c = evt.request.content;
       const kind = (c.data?.kind as any) ?? 'system';
+      if (kind === 'rest' || kind === 'rest-live') return; // gym screen logs rest itself
       useNotifications.getState().add(c.title ?? 'Reminder', c.body ?? '', kind).catch(() => {});
     });
     return () => sub.remove();
@@ -150,7 +151,14 @@ export default function TabsLayout() {
     <SwipeTabs
       tabBarPosition="bottom"
       tabBar={(props) => <BottomBar {...props} />}
-      screenOptions={{ swipeEnabled: true, lazy: true }}
+      style={{ backgroundColor: colors.canvas }}
+      screenOptions={{
+        swipeEnabled: true,
+        lazy: true,
+        lazyPreloadDistance: 1, // pre-render the neighbour tabs so a swipe never lands on an empty page
+        lazyPlaceholder: () => <View style={{ flex: 1, backgroundColor: colors.canvas }} />,
+        sceneStyle: { backgroundColor: colors.canvas },
+      }}
     >
       <SwipeTabs.Screen name="index" />
       <SwipeTabs.Screen name="gym" />

@@ -47,13 +47,23 @@
           "microphonePermission": false
         }
       ],
-      "expo-notifications"
+      "expo-notifications",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0e0e13",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 160,
+          "resizeMode": "contain"
+        }
+      ]
     ],
     "extra": {
       "router": {},
       "eas": {
         "projectId": "05583ab5-ff3b-4786-a21b-6d44839dc9ac"
       }
-    }
+    },
+    "backgroundColor": "#0e0e13"
   }
 }

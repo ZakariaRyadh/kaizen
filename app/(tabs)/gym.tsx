@@ -11,7 +11,7 @@ import { Ring } from '../../components/Ring';
 import { SwipeSheet } from '../../components/SwipeSheet';
 import { WeightSheet } from '../../components/WeightSheet';
 import { useRefresh } from '../../hooks/useRefresh';
-import { Notifications, scheduleAt } from '../../services/notifications';
+import { clearRestAlerts, startRestAlerts } from '../../services/notifications';
 import { LiveSet, useGym } from '../../store/gym';
 import { useNotifications } from '../../store/notifications';
 import { useSettings } from '../../store/settings';
@@ -75,20 +75,22 @@ export default function Gym() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restSeconds]);
 
-  // a real scheduled OS notification backs the rest timer, so "rest done" still
-  // fires on time even if the JS interval below gets throttled while backgrounded.
-  const restNotifId = useRef<string | null>(null);
-  const cancelRestNotif = () => {
-    if (restNotifId.current) {
-      Notifications.cancelScheduledNotificationAsync(restNotifId.current).catch(() => {});
-      restNotifId.current = null;
-    }
+  // The rest timer counts down to a fixed end time (not tick by tick), so it is
+  // still right after the app was in the background. OS notifications show it
+  // outside the app: "Resting · next set at …", replaced by "Rest done" on time.
+  const restEnd = useRef<number | null>(null); // ms timestamp while running
+  const restNotifsOn = () => useSettings.getState().notifs.rest !== false;
+  const startRest = (seconds: number) => {
+    restEnd.current = Date.now() + seconds * 1000;
+    setRestLeft(seconds);
+    setRestRunning(true);
+    if (restNotifsOn()) startRestAlerts(new Date(restEnd.current)).catch(() => {});
   };
-  const scheduleRestNotif = async (seconds: number) => {
-    cancelRestNotif();
-    if (useSettings.getState().notifs.rest === false) return;
-    const id = await scheduleAt({ title: 'Rest done', body: 'Back to it — next set.', kind: 'rest' }, new Date(Date.now() + seconds * 1000));
-    restNotifId.current = id;
+  const stopRest = (resetTo?: number) => {
+    restEnd.current = null;
+    setRestRunning(false);
+    if (resetTo !== undefined) setRestLeft(resetTo);
+    clearRestAlerts().catch(() => {});
   };
 
   const [programModal, setProgramModal] = useState(false);
@@ -117,21 +119,16 @@ export default function Gym() {
     const id = setInterval(() => {
       if (sessRef.current !== null) setElapsed(Math.floor((Date.now() - sessRef.current) / 1000));
       if (cardioRef.current !== null) setCardioSec(Math.floor((Date.now() - cardioRef.current) / 1000));
-      setRestLeft((r) => {
-        if (!restRunning) return r;
-        if (r <= 1) {
+      if (restEnd.current !== null) {
+        const left = Math.max(0, Math.ceil((restEnd.current - Date.now()) / 1000));
+        setRestLeft(left);
+        if (left === 0) {
+          // the OS "Rest done" alert fires by itself; just log it to the inbox
+          restEnd.current = null;
           setRestRunning(false);
-          // the real OS notification (scheduled in scheduleRestNotif) delivers the
-          // actual alert now, on time, even if this interval was throttled in the
-          // background — this just logs it to the in-app inbox while foregrounded.
-          restNotifId.current = null;
-          if (useSettings.getState().notifs.rest !== false) {
-            useNotifications.getState().add('Rest done', 'Back to it — next set.', 'rest');
-          }
-          return 0;
+          if (restNotifsOn()) useNotifications.getState().add('Rest done', 'Back to it — next set.', 'rest').catch(() => {});
         }
-        return r - 1;
-      });
+      }
     }, 1000);
     return () => clearInterval(id);
   }, [restRunning]);
@@ -168,7 +165,7 @@ export default function Gym() {
     setCardioTotal(0);
     setCardioRunning(false);
     setPaused(false);
-    cancelRestNotif();
+    stopRest(restSeconds);
   };
 
   // pause / resume the running session or cardio timer
@@ -214,9 +211,7 @@ export default function Gym() {
     }));
     if (!wasDone) {
       // just completed a set → kick off the rest timer
-      setRestLeft(restSeconds);
-      setRestRunning(true);
-      scheduleRestNotif(restSeconds);
+      startRest(restSeconds);
     }
   };
   const editSet = (exIndex: number, i: number, field: 'reps' | 'weight', val: number) =>
@@ -593,30 +588,19 @@ export default function Gym() {
               </View>
               <View style={{ flex: 1, gap: 9 }}>
                 <Pressable
-                  onPress={() => {
-                    const next = !restRunning;
-                    setRestRunning(next);
-                    if (next) scheduleRestNotif(restLeft);
-                    else cancelRestNotif();
-                  }}
+                  onPress={() => (restRunning ? stopRest() : startRest(restLeft > 0 ? restLeft : restSeconds))}
                   style={{ paddingVertical: 13, borderRadius: 13, backgroundColor: accent, alignItems: 'center' }}
                 >
                   <Text style={{ color: '#fff', fontFamily: fonts.uiBold, fontSize: 15 }}>{restRunning ? 'Pause' : 'Start'}</Text>
                 </Pressable>
                 <View style={{ flexDirection: 'row', gap: 8 }}>
                   <Pressable
-                    onPress={() =>
-                      setRestLeft((r) => {
-                        const next = r + 15;
-                        if (restRunning) scheduleRestNotif(next);
-                        return next;
-                      })
-                    }
+                    onPress={() => (restRunning ? startRest(restLeft + 15) : setRestLeft((r) => r + 15))}
                     style={{ flex: 1, paddingVertical: 11, borderRadius: 12, borderWidth: 1, borderColor: colors.borderSoft, alignItems: 'center' }}
                   >
                     <Text style={{ color: colors.textSoft, fontFamily: fonts.monoSemi, fontSize: 13 }}>+15s</Text>
                   </Pressable>
-                  <Pressable onPress={() => { setRestLeft(restSeconds); setRestRunning(false); cancelRestNotif(); }} style={{ flex: 1, paddingVertical: 11, borderRadius: 12, borderWidth: 1, borderColor: colors.borderSoft, alignItems: 'center' }}>
+                  <Pressable onPress={() => stopRest(restSeconds)} style={{ flex: 1, paddingVertical: 11, borderRadius: 12, borderWidth: 1, borderColor: colors.borderSoft, alignItems: 'center' }}>
                     <Text style={{ color: colors.textSoft, fontFamily: fonts.uiSemi, fontSize: 13 }}>Reset</Text>
                   </Pressable>
                 </View>
