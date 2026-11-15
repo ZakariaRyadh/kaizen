@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 import { apiDelete, apiGet, apiPatch, apiPost } from '../services/api';
 import { LoggedSession, Program, PROGRAMS, SetLog } from '../theme/programs';
-import { TODAY } from './tasks';
+import { todayIso } from './today';
 
 // ---- programs (nested days + exercises) ----
 const programToApi = (p: Program) => ({
@@ -44,14 +44,14 @@ const programFromApi = (r: any): Program => ({
 
 // ---- sessions ----
 const daysBetween = (iso: string) =>
-  Math.max(0, Math.round((new Date(TODAY).getTime() - new Date(iso).getTime()) / 86400000));
+  Math.max(0, Math.round((new Date(todayIso()).getTime() - new Date(iso).getTime()) / 86400000));
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
 const sessionToApi = (s: LoggedSession) => ({
   program_name: s.program,
   day_label: s.day,
-  date: TODAY,
+  date: todayIso(),
   duration_sec: s.durationSec,
   volume: s.volume,
   cardio: s.cardio,
@@ -189,7 +189,7 @@ export const useGym = create<State>((set, get) => ({
               order: m.order,
               reps: m.reps,
               weight: m.weight,
-              date: TODAY,
+              date: todayIso(),
               is_pr: m.isPr,
             }),
           );

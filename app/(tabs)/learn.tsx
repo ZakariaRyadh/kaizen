@@ -9,11 +9,10 @@ import { ProgressStat } from '../../components/ProgressStat';
 import { useRefresh } from '../../hooks/useRefresh';
 import { LearnSession, Subject, useLearning } from '../../store/learning';
 import { useSettings } from '../../store/settings';
-import { TODAY } from '../../store/tasks';
+import { todayIso, useToday } from '../../store/today';
 import { useAccent, withAlpha } from '../../theme/AccentContext';
 import { colors, fonts } from '../../theme/colors';
 
-const WEEKDAY = new Date().toLocaleDateString(undefined, { weekday: 'long' });
 const pad = (n: number) => String(n).padStart(2, '0');
 const clock = (s: number) => `${pad(Math.floor(s / 3600))}:${pad(Math.floor((s % 3600) / 60))}:${pad(s % 60)}`;
 const hrs = (s: number) => {
@@ -22,7 +21,7 @@ const hrs = (s: number) => {
 };
 const fmtDay = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-const daysAgo = (iso: string) => Math.round((new Date(TODAY).getTime() - new Date(iso).getTime()) / 86400000);
+const daysAgo = (iso: string) => Math.round((new Date(todayIso()).getTime() - new Date(iso).getTime()) / 86400000);
 
 function Segment({ options, value, onChange, accent }: { options: { k: string; label: string }[]; value: string; onChange: (k: string) => void; accent: string }) {
   return (
@@ -41,6 +40,8 @@ function Segment({ options, value, onChange, accent }: { options: { k: string; l
 
 export default function Learn() {
   const { accent } = useAccent();
+  const TODAY = useToday();
+  const WEEKDAY = new Date(TODAY + 'T12:00').toLocaleDateString(undefined, { weekday: 'long' });
   const [view, setView] = useState<'train' | 'log'>('train');
 
   const subjects = useLearning((s) => s.subjects);

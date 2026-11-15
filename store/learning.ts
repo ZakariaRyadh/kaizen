@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 import { apiDelete, apiGet, apiPatch, apiPost } from '../services/api';
-import { TODAY } from './tasks';
+import { todayIso } from './today';
 
 export type Subject = { id: string; name: string; color: string; createdAt: string };
 
@@ -32,7 +32,7 @@ const sessionFromApi = (r: any): LearnSession => ({
 const sessionToApi = (s: Partial<LearnSession>) => ({
   subject: s.subjectId ?? null,
   subject_name: s.subjectName ?? '',
-  date: s.date ?? TODAY,
+  date: s.date ?? todayIso(),
   duration_sec: s.durationSec ?? 0,
   goal: s.goal ?? '',
   summary: s.summary ?? '',

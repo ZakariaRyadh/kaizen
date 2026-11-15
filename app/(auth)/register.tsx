@@ -18,8 +18,8 @@ export default function Register() {
 
   const submit = async () => {
     setLocalError(null);
-    if (password.length < 6) {
-      setLocalError('Password must be at least 6 characters.');
+    if (password.length < 8) {
+      setLocalError('Password must be at least 8 characters.');
       return;
     }
     setLoading(true);
@@ -37,7 +37,7 @@ export default function Register() {
     <AuthShell showBack kicker="Get started" title="Create account" subtitle="Your tasks, workouts and notes — saved to your account and synced everywhere.">
       <AuthField label="Name" icon="mail" value={name} onChangeText={setName} placeholder="Your name" />
       <AuthField label="Email" icon="mail" value={email} onChangeText={setEmail} placeholder="you@example.com" keyboardType="email-address" />
-      <AuthField label="Password" icon="lock" value={password} onChangeText={setPassword} placeholder="At least 6 characters" secure />
+      <AuthField label="Password" icon="lock" value={password} onChangeText={setPassword} placeholder="At least 8 characters" secure />
       <AuthError message={localError ?? error} />
       <AuthButton label="Create account" onPress={submit} loading={loading} />
 

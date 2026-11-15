@@ -3,17 +3,9 @@ import { create } from 'zustand';
 import { apiDelete, apiGet, apiPatch, apiPost } from '../services/api';
 import { Task } from '../theme/tags';
 
-// The app's "today" — the real device date, computed once at launch.
-const _pad = (n: number) => String(n).padStart(2, '0');
-const _now = new Date();
-export const YEAR = _now.getFullYear();
-export const MONTH = _now.getMonth();              // 0-indexed
-export const TODAY_DAY = _now.getDate();
-export const MONTH_NAME = _now.toLocaleString('default', { month: 'long' });
-export const TODAY = `${YEAR}-${_pad(MONTH + 1)}-${_pad(TODAY_DAY)}`;
+import { todayIso } from './today';
 
-// 'YYYY-MM-DD' for a day number in the current month (used by Calendar).
-export const dateOf = (day: number) => `${YEAR}-${_pad(MONTH + 1)}-${_pad(day)}`;
+const _pad = (n: number) => String(n).padStart(2, '0');
 
 // ---- generic calendar helpers (any month/year) ----
 export const iso = (year: number, month: number, day: number) => `${year}-${_pad(month + 1)}-${_pad(day)}`;
@@ -40,7 +32,7 @@ const fromApi = (r: any): Task => ({
   tagColor: r.tag_color,
   repeat: r.repeat,
   done: r.done,
-  date: r.due_date ?? TODAY,
+  date: r.due_date ?? todayIso(),
 });
 
 type State = {

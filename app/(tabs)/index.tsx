@@ -22,13 +22,12 @@ import { useGym } from '../../store/gym';
 import { useLearning } from '../../store/learning';
 import { useNotifications } from '../../store/notifications';
 import { useSettings } from '../../store/settings';
-import { TODAY, TODAY_DAY, useTasks } from '../../store/tasks';
+import { useTasks } from '../../store/tasks';
+import { useToday } from '../../store/today';
 import { useAccent, withAlpha } from '../../theme/AccentContext';
 import { colors, fonts } from '../../theme/colors';
 import { Task } from '../../theme/tags';
 
-// real current date, e.g. "Tuesday, June 16"
-const TODAY_LABEL = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
 const greeting = () => {
   const h = new Date().getHours();
   return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
@@ -36,6 +35,9 @@ const greeting = () => {
 
 export default function Home() {
   const { accent } = useAccent();
+  const TODAY = useToday();
+  // real current date, e.g. "Tuesday, June 16"
+  const TODAY_LABEL = new Date(TODAY + 'T12:00').toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
   const user = useAuth((s) => s.user);
   const firstName = (user?.display_name || user?.email?.split('@')[0] || '').split(' ')[0];
   const initial = (user?.display_name || user?.email || 'A').charAt(0).toUpperCase();
@@ -52,7 +54,12 @@ export default function Home() {
   const today = useMemo(() => {
     const list = allTasks.filter((t) => t.date === TODAY);
     return [...list.filter((t) => !t.done), ...list.filter((t) => t.done)];
-  }, [allTasks]);
+  }, [allTasks, TODAY]);
+
+  // unfinished tasks whose day already passed — surfaced in a banner, not silently dropped
+  const overdue = useMemo(() => allTasks.filter((t) => t.date < TODAY && !t.done), [allTasks, TODAY]);
+  const moveOverdueToToday = (t: Task) => upsert({ ...t, date: TODAY });
+  const skipOverdue = (t: Task) => upsert({ ...t, done: true });
 
   const doneCount = useMemo(() => today.filter((t) => t.done).length, [today]);
   const total = today.length;
@@ -67,7 +74,7 @@ export default function Home() {
   // today's study time (mins) + count of saved-for-later ideas
   const learnMin = useMemo(
     () => Math.round(learnSessions.filter((s) => s.done && s.date === TODAY).reduce((sum, s) => sum + s.durationSec, 0) / 60),
-    [learnSessions],
+    [learnSessions, TODAY],
   );
   const learnIdeas = useMemo(() => learnSessions.filter((s) => !s.done).length, [learnSessions]);
 
@@ -81,7 +88,7 @@ export default function Home() {
   // next upcoming calendar event (today onward)
   const nextEvent = useMemo(
     () => events.filter((e) => e.date >= TODAY).sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time))[0],
-    [events],
+    [events, TODAY],
   );
   // your current program
   const nextWorkout = programs.find((p) => p.isActive) ?? programs[0];
@@ -151,6 +158,31 @@ export default function Home() {
           </Pressable>
         </View>
       </View>
+
+      {/* overdue tasks — surfaced, never silently dropped off Home */}
+      {overdue.length > 0 && (
+        <View style={{ backgroundColor: withAlpha(colors.amber, 10), borderWidth: 1, borderColor: withAlpha(colors.amber, 26), borderRadius: 18, padding: 14, gap: 10 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Icon name="flame" size={15} color={colors.amber} />
+            <Text style={{ fontSize: 14, color: colors.amber, fontFamily: fonts.uiSemi }}>
+              {overdue.length} overdue task{overdue.length > 1 ? 's' : ''}
+            </Text>
+          </View>
+          {overdue.map((t) => (
+            <View key={t.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text numberOfLines={1} style={{ flex: 1, fontSize: 13.5, color: colors.textMid, fontFamily: fonts.ui }}>
+                {t.title}
+              </Text>
+              <Pressable onPress={() => moveOverdueToToday(t)} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: accent }}>
+                <Text style={{ fontSize: 12, color: '#fff', fontFamily: fonts.uiSemi }}>Move to today</Text>
+              </Pressable>
+              <Pressable onPress={() => skipOverdue(t)} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}>
+                <Text style={{ fontSize: 12, color: colors.textMuted, fontFamily: fonts.uiSemi }}>Skip</Text>
+              </Pressable>
+            </View>
+          ))}
+        </View>
+      )}
 
       {/* today progress card */}
       {show('today') && (

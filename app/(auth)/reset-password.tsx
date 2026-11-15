@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Pressable, Text } from 'react-native';
 
 import { AuthButton, AuthError, AuthField, AuthShell } from '../../components/auth-ui';
-import { requestOTP, verifyOTP } from '../../services/api';
+import { errorMessage, requestOTP, verifyOTP } from '../../services/api';
 import { useAccent } from '../../theme/AccentContext';
 import { fonts } from '../../theme/colors';
 
@@ -31,8 +31,8 @@ export default function ResetPassword() {
     try {
       await verifyOTP(email, code.trim(), password);
       router.replace('/login');
-    } catch {
-      setError('Invalid or expired code.');
+    } catch (e) {
+      setError(errorMessage(e, 'Invalid or expired code.'));
     } finally {
       setLoading(false);
     }

@@ -1,14 +1,15 @@
 import Constants from 'expo-constants';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
+import * as IntentLauncher from 'expo-intent-launcher';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, Image, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Alert, Image, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Icon } from '../components/Icon';
-import { changePassword } from '../services/api';
+import { changePassword, errorMessage } from '../services/api';
 import { ensurePermission, Notifications } from '../services/notifications';
 import { useAuth } from '../store/auth';
 import { PROGRESS_OPTIONS, REST_OPTIONS, useSettings } from '../store/settings';
@@ -48,6 +49,14 @@ export default function Settings() {
     const ok = await ensurePermission();
     setPermGranted(ok);
     if (!ok) Alert.alert('Blocked', 'Enable notifications for Kaizen in your phone settings.');
+  };
+  // Android 12+: exact-alarm scheduling needs a separate, manually-granted permission —
+  // without it, reminders silently degrade to inexact (often "only fires once you reopen the app").
+  const openExactAlarmSettings = () => {
+    if (Platform.OS !== 'android') return;
+    IntentLauncher.startActivityAsync('android.settings.REQUEST_SCHEDULE_EXACT_ALARM_PERMISSION', {
+      data: `package:${Constants.expoConfig?.android?.package}`,
+    }).catch(() => IntentLauncher.startActivityAsync('android.settings.APPLICATION_DETAILS_SETTINGS'));
   };
   // profile photo: pick → crop square → shrink to 256px JPEG → base64 → save
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
@@ -113,7 +122,7 @@ export default function Settings() {
   const [savingPw, setSavingPw] = useState(false);
   const savePassword = async () => {
     if (!currentPw || !newPw) return Alert.alert('Missing fields', 'Enter your current and new password.');
-    if (newPw.length < 6) return Alert.alert('Too short', 'New password must be at least 6 characters.');
+    if (newPw.length < 8) return Alert.alert('Too short', 'New password must be at least 8 characters.');
     if (newPw !== confirmPw) return Alert.alert("Doesn't match", 'New password and confirmation must match.');
     setSavingPw(true);
     try {
@@ -123,7 +132,7 @@ export default function Settings() {
       setConfirmPw('');
       Alert.alert('Saved', 'Password updated.');
     } catch (e: any) {
-      Alert.alert('Error', 'Current password is incorrect.');
+      Alert.alert('Error', errorMessage(e, 'Could not change password.'));
     } finally {
       setSavingPw(false);
     }
@@ -305,6 +314,24 @@ export default function Settings() {
               )}
             </View>
           </View>
+
+          {Platform.OS === 'android' && (
+            <>
+              <View style={{ height: 8 }} />
+              <View style={{ backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 15, padding: 14, gap: 8 }}>
+                <Text style={{ color: colors.textSoft, fontFamily: fonts.uiSemi, fontSize: 13.5 }}>
+                  Reminders firing late or only when you open the app?
+                </Text>
+                <Text style={{ color: colors.textFaint, fontFamily: fonts.ui, fontSize: 12 }}>
+                  Android needs a separate "Alarms & reminders" permission for on-time delivery
+                  while the app is closed. Tap below to grant it.
+                </Text>
+                <Pressable onPress={openExactAlarmSettings} style={{ alignSelf: 'flex-start', backgroundColor: accent, borderRadius: 9, paddingHorizontal: 12, paddingVertical: 7, marginTop: 2 }}>
+                  <Text style={{ color: '#fff', fontFamily: fonts.uiSemi, fontSize: 12 }}>Open alarm settings</Text>
+                </Pressable>
+              </View>
+            </>
+          )}
 
           <View style={{ height: 8 }} />
           {NOTIF_META.map((m) => (

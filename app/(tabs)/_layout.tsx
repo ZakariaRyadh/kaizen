@@ -5,7 +5,7 @@ import type {
 } from '@react-navigation/material-top-tabs';
 import type { ParamListBase, TabNavigationState } from '@react-navigation/native';
 import { withLayoutContext } from 'expo-router';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -19,6 +19,7 @@ import { useNotes } from '../../store/notes';
 import { useNotifications } from '../../store/notifications';
 import { useSettings } from '../../store/settings';
 import { useTasks } from '../../store/tasks';
+import { startTodayWatcher, useToday } from '../../store/today';
 import { useWeight } from '../../store/weight';
 import { useAccent, withAlpha } from '../../theme/AccentContext';
 import { colors, fonts } from '../../theme/colors';
@@ -126,6 +127,24 @@ export default function TabsLayout() {
     });
     return () => sub.remove();
   }, []);
+
+  // new day while the app stayed open: refresh day-based data + today's reminders
+  const today = useToday();
+  useEffect(() => {
+    startTodayWatcher();
+  }, []);
+  const firstDay = useRef(today);
+  useEffect(() => {
+    if (today === firstDay.current) return; // initial load already handled above
+    firstDay.current = today;
+    useGym.getState().load().catch(() => {});
+    useLearning.getState().load().catch(() => {});
+    useTasks
+      .getState()
+      .load()
+      .then(() => syncReminders(useTasks.getState().tasks, useSettings.getState().notifs))
+      .catch(() => {});
+  }, [today]);
 
   return (
     <SwipeTabs

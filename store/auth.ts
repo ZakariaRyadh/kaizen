@@ -1,7 +1,23 @@
 import { create } from 'zustand';
 
-import { apiLogin, apiLogout, apiRegister, getMe, updateAvatar, updateMe } from '../services/api';
+import { apiLogin, apiLogout, apiRegister, errorMessage, getMe, updateAvatar, updateMe } from '../services/api';
+import { cancelAll } from '../services/notifications';
 import { getAccessToken } from '../services/storage';
+import { useEvents } from './events';
+import { useGym } from './gym';
+import { useLearning } from './learning';
+import { useNotes } from './notes';
+import { useNotifications } from './notifications';
+import { useSettings } from './settings';
+import { useTasks } from './tasks';
+import { useWeight } from './weight';
+
+// reset every data store so the next account never sees the previous one's data
+type Resettable = { setState: (s: any, replace: true) => void; getInitialState: () => any };
+const resetStores = () => {
+  const stores: Resettable[] = [useTasks, useNotes, useEvents, useGym, useWeight, useLearning, useNotifications, useSettings];
+  for (const store of stores) store.setState(store.getInitialState(), true);
+};
 
 type User = { id: number; email: string; display_name: string; avatar?: string } | null;
 
@@ -56,13 +72,15 @@ export const useAuth = create<AuthState>((set) => ({
       const data = await apiRegister(email, password, displayName);
       set({ isLoggedIn: true, user: data.user ?? null });
     } catch (e: any) {
-      set({ error: 'Could not create account (email may be taken)' });
+      set({ error: errorMessage(e, 'Could not create account.') });
       throw e;
     }
   },
 
   logout: async () => {
     await apiLogout();
+    await cancelAll().catch(() => {}); // scheduled reminders belong to this account
+    resetStores();
     set({ isLoggedIn: false, user: null });
   },
 

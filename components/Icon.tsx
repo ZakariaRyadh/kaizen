@@ -22,7 +22,8 @@ export type IconName =
   | 'keypad'
   | 'back'
   | 'book'
-  | 'bell';
+  | 'bell'
+  | 'shuffle';
 
 type Props = { name: IconName; size?: number; color?: string };
 
@@ -106,6 +107,15 @@ export function Icon({ name, size = 23, color = '#fff' }: Props) {
       return (
         <Svg {...s} viewBox="0 0 16 16">
           <Path d="M4 2.5v11l9-5.5z" fill={color} />
+        </Svg>
+      );
+    case 'shuffle':
+      return (
+        <Svg {...s} viewBox="0 0 24 24">
+          <Path d="M3 6h3.5c1.6 0 3 .9 3.8 2.2l3.4 5.6c.8 1.3 2.2 2.2 3.8 2.2H21" {...stroke} />
+          <Path d="M3 18h3.5c1.6 0 3-.9 3.8-2.2M17.5 6H21" {...stroke} />
+          <Path d="M18.5 3 21 6l-2.5 3" {...stroke} />
+          <Path d="M18.5 13.5 21 16.5l-2.5 3" {...stroke} />
         </Svg>
       );
     case 'pause':

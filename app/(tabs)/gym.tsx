@@ -12,18 +12,17 @@ import { Ring } from '../../components/Ring';
 import { SwipeSheet } from '../../components/SwipeSheet';
 import { WeightSheet } from '../../components/WeightSheet';
 import { useRefresh } from '../../hooks/useRefresh';
-import { fireNow } from '../../services/notifications';
+import { Notifications, scheduleAt } from '../../services/notifications';
 import { LiveSet, useGym } from '../../store/gym';
 import { useNotifications } from '../../store/notifications';
 import { useSettings } from '../../store/settings';
 import { usePlayer } from '../../store/player';
-import { TODAY } from '../../store/tasks';
+import { useToday } from '../../store/today';
 import { useWeight } from '../../store/weight';
 import { useAccent, withAlpha } from '../../theme/AccentContext';
 import { colors, fonts } from '../../theme/colors';
-import { LoggedSession, Program } from '../../theme/programs';
+import { Exercise, LoggedSession, Program } from '../../theme/programs';
 
-const WEEKDAY = new Date().toLocaleDateString(undefined, { weekday: 'long' });
 const fmtDay = (iso: string) => new Date(iso).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -42,6 +41,8 @@ function dayVolume(exercises: { sets: number; reps: string; weight: string }[]) 
 
 export default function Gym() {
   const { accent } = useAccent();
+  const TODAY = useToday();
+  const WEEKDAY = new Date(TODAY + 'T12:00').toLocaleDateString(undefined, { weekday: 'long' });
 
   const [view, setView] = useState<'train' | 'log'>('train');
   const programs = useGym((s) => s.programs);
@@ -62,7 +63,8 @@ export default function Gym() {
   const [cardioSec, setCardioSec] = useState(0);       // current running cardio segment
   const [cardioTotal, setCardioTotal] = useState(0);   // committed cardio so far (display)
   const [paused, setPaused] = useState(false);         // session/cardio timer paused
-  const [liveSets, setLiveSets] = useState<Record<string, LiveSet[]>>({}); // sets being done now
+  const [liveSets, setLiveSets] = useState<Record<number, LiveSet[]>>({}); // sets being done now, keyed by exercise index
+  const [liveExercises, setLiveExercises] = useState<Exercise[]>([]); // editable copy of the day's plan for this session (name/weight edits)
 
   // rest timer (counts down) — length comes from Settings
   const restSeconds = useSettings((s) => s.restSeconds);
@@ -75,11 +77,28 @@ export default function Gym() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restSeconds]);
 
+  // a real scheduled OS notification backs the rest timer, so "rest done" still
+  // fires on time even if the JS interval below gets throttled while backgrounded.
+  const restNotifId = useRef<string | null>(null);
+  const cancelRestNotif = () => {
+    if (restNotifId.current) {
+      Notifications.cancelScheduledNotificationAsync(restNotifId.current).catch(() => {});
+      restNotifId.current = null;
+    }
+  };
+  const scheduleRestNotif = async (seconds: number) => {
+    cancelRestNotif();
+    if (useSettings.getState().notifs.rest === false) return;
+    const id = await scheduleAt({ title: 'Rest done', body: 'Back to it — next set.', kind: 'rest' }, new Date(Date.now() + seconds * 1000));
+    restNotifId.current = id;
+  };
+
   // playlist (real local-file player) + modals
   const tracks = usePlayer((s) => s.tracks);
   const playing = usePlayer((s) => s.playing);
   const trackIndex = usePlayer((s) => s.index);
   const playerReady = usePlayer((s) => s.ready);
+  const shuffle = usePlayer((s) => s.shuffle);
   const playerApi = usePlayer();
   const [programModal, setProgramModal] = useState(false);
   const [importModal, setImportModal] = useState(false);
@@ -133,8 +152,11 @@ export default function Gym() {
         if (!restRunning) return r;
         if (r <= 1) {
           setRestRunning(false);
+          // the real OS notification (scheduled in scheduleRestNotif) delivers the
+          // actual alert now, on time, even if this interval was throttled in the
+          // background — this just logs it to the in-app inbox while foregrounded.
+          restNotifId.current = null;
           if (useSettings.getState().notifs.rest !== false) {
-            fireNow({ title: 'Rest done', body: 'Back to it — next set.', kind: 'rest' });
             useNotifications.getState().add('Rest done', 'Back to it — next set.', 'rest');
           }
           return 0;
@@ -177,6 +199,7 @@ export default function Gym() {
     setCardioTotal(0);
     setCardioRunning(false);
     setPaused(false);
+    cancelRestNotif();
   };
 
   // pause / resume the running session or cardio timer
@@ -200,36 +223,42 @@ export default function Gym() {
     }
   };
 
-  // build the editable set list for the current day from its program plan
-  const buildLiveSets = (d?: typeof day): Record<string, LiveSet[]> => {
+  // build the editable set list for the current day from its program plan, keyed by
+  // exercise index (not name) so renaming an exercise mid-session doesn't lose its sets
+  const buildLiveSets = (d?: typeof day): Record<number, LiveSet[]> => {
     if (!d || d.isCardio) return {};
-    const map: Record<string, LiveSet[]> = {};
-    for (const ex of d.exercises) {
+    const map: Record<number, LiveSet[]> = {};
+    d.exercises.forEach((ex, i) => {
       const n = Math.max(1, Number(ex.sets) || 1);
       const reps = parseInt(ex.reps, 10) || 0;
       const weight = parseFloat(ex.weight) || 0;
-      map[ex.name] = Array.from({ length: n }, () => ({ reps, weight, done: false }));
-    }
+      map[i] = Array.from({ length: n }, () => ({ reps, weight, done: false }));
+    });
     return map;
   };
 
-  const toggleSet = (exercise: string, i: number) => {
-    const wasDone = liveSets[exercise]?.[i]?.done;
+  const toggleSet = (exIndex: number, i: number) => {
+    const wasDone = liveSets[exIndex]?.[i]?.done;
     setLiveSets((m) => ({
       ...m,
-      [exercise]: (m[exercise] ?? []).map((s, k) => (k === i ? { ...s, done: !s.done } : s)),
+      [exIndex]: (m[exIndex] ?? []).map((s, k) => (k === i ? { ...s, done: !s.done } : s)),
     }));
     if (!wasDone) {
       // just completed a set → kick off the rest timer
       setRestLeft(restSeconds);
       setRestRunning(true);
+      scheduleRestNotif(restSeconds);
     }
   };
-  const editSet = (exercise: string, i: number, field: 'reps' | 'weight', val: number) =>
+  const editSet = (exIndex: number, i: number, field: 'reps' | 'weight', val: number) =>
     setLiveSets((m) => ({
       ...m,
-      [exercise]: (m[exercise] ?? []).map((s, k) => (k === i ? { ...s, [field]: val } : s)),
+      [exIndex]: (m[exIndex] ?? []).map((s, k) => (k === i ? { ...s, [field]: val } : s)),
     }));
+
+  // rename an exercise live, mid-session — purely local until the session is saved
+  const renameExercise = (exIndex: number, name: string) =>
+    setLiveExercises((arr) => arr.map((e, k) => (k === exIndex ? { ...e, name } : e)));
 
   // ----- start options (from idle) -----
   const startWithCardio = () => {
@@ -240,6 +269,7 @@ export default function Gym() {
   const startTraining = () => {
     resetSession();
     setLiveSets(buildLiveSets(day));
+    setLiveExercises(day?.exercises.map((e) => ({ ...e })) ?? []);
     sessRef.current = Date.now();
     setElapsed(0);
     setPhase('training');
@@ -249,6 +279,7 @@ export default function Gym() {
   const cardioThenTrain = () => {
     commitCardioSegment();
     setLiveSets(buildLiveSets(day));
+    setLiveExercises(day?.exercises.map((e) => ({ ...e })) ?? []);
     sessRef.current = Date.now();
     setElapsed(0);
     setPaused(false);
@@ -268,11 +299,12 @@ export default function Gym() {
     commitCardioSegment();
     const totalCardio = cardioTotalRef.current;
 
-    // gather the sets actually completed this workout
+    // gather the sets actually completed this workout — keyed by index so a mid-session
+    // rename is reflected in the exercise name actually recorded to history
     const doneSets: { exercise: string; reps: number; weight: number }[] = [];
-    for (const [exercise, sets] of Object.entries(liveSets)) {
-      for (const s of sets) if (s.done) doneSets.push({ exercise, reps: s.reps, weight: s.weight });
-    }
+    liveExercises.forEach((ex, i) => {
+      for (const s of liveSets[i] ?? []) if (s.done) doneSets.push({ exercise: ex.name, reps: s.reps, weight: s.weight });
+    });
     // real volume from what was lifted; fall back to plan estimate if nothing checked
     const realVolume = doneSets.reduce((v, s) => v + s.reps * s.weight, 0);
 
@@ -291,8 +323,27 @@ export default function Gym() {
     if (doneSets.length > 0) gym.saveWorkout(entry, doneSets);
     else gym.addSession(entry);
 
+    // carry today's renamed exercises + the weight actually lifted back into the
+    // program template — next session starts pre-filled, nothing to re-type.
+    if (liveExercises.length > 0 && program) {
+      const di = Math.min(dayIndex, program.days.length - 1);
+      const updatedDays = program.days.map((d, k) => {
+        if (k !== di) return d;
+        return {
+          ...d,
+          exercises: liveExercises.map((ex, i) => {
+            const done = (liveSets[i] ?? []).filter((s) => s.done && s.weight > 0);
+            const lastWeight = done.length ? done[done.length - 1].weight : null;
+            return { ...ex, weight: lastWeight != null ? `${lastWeight} kg` : ex.weight };
+          }),
+        };
+      });
+      gym.saveProgram({ ...program, days: updatedDays });
+    }
+
     resetSession();
     setLiveSets({});
+    setLiveExercises([]);
     setPhase('idle');
     setView('log');
   };
@@ -572,14 +623,31 @@ export default function Gym() {
                 </View>
               </View>
               <View style={{ flex: 1, gap: 9 }}>
-                <Pressable onPress={() => setRestRunning((r) => !r)} style={{ paddingVertical: 13, borderRadius: 13, backgroundColor: accent, alignItems: 'center' }}>
+                <Pressable
+                  onPress={() => {
+                    const next = !restRunning;
+                    setRestRunning(next);
+                    if (next) scheduleRestNotif(restLeft);
+                    else cancelRestNotif();
+                  }}
+                  style={{ paddingVertical: 13, borderRadius: 13, backgroundColor: accent, alignItems: 'center' }}
+                >
                   <Text style={{ color: '#fff', fontFamily: fonts.uiBold, fontSize: 15 }}>{restRunning ? 'Pause' : 'Start'}</Text>
                 </Pressable>
                 <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <Pressable onPress={() => setRestLeft((r) => r + 15)} style={{ flex: 1, paddingVertical: 11, borderRadius: 12, borderWidth: 1, borderColor: colors.borderSoft, alignItems: 'center' }}>
+                  <Pressable
+                    onPress={() =>
+                      setRestLeft((r) => {
+                        const next = r + 15;
+                        if (restRunning) scheduleRestNotif(next);
+                        return next;
+                      })
+                    }
+                    style={{ flex: 1, paddingVertical: 11, borderRadius: 12, borderWidth: 1, borderColor: colors.borderSoft, alignItems: 'center' }}
+                  >
                     <Text style={{ color: colors.textSoft, fontFamily: fonts.monoSemi, fontSize: 13 }}>+15s</Text>
                   </Pressable>
-                  <Pressable onPress={() => { setRestLeft(restSeconds); setRestRunning(false); }} style={{ flex: 1, paddingVertical: 11, borderRadius: 12, borderWidth: 1, borderColor: colors.borderSoft, alignItems: 'center' }}>
+                  <Pressable onPress={() => { setRestLeft(restSeconds); setRestRunning(false); cancelRestNotif(); }} style={{ flex: 1, paddingVertical: 11, borderRadius: 12, borderWidth: 1, borderColor: colors.borderSoft, alignItems: 'center' }}>
                     <Text style={{ color: colors.textSoft, fontFamily: fonts.uiSemi, fontSize: 13 }}>Reset</Text>
                   </Pressable>
                 </View>
@@ -593,15 +661,23 @@ export default function Gym() {
                 <Text style={{ fontSize: 13, color: colors.textDim, fontFamily: fonts.mono }}>{day.exercises.length} total</Text>
               </View>
               <View style={{ gap: 10 }}>
-                {day.exercises.map((ex, i) => (
+                {(phase === 'training' ? liveExercises : day.exercises).map((ex, i) => (
                   <View key={i} style={{ backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 17, padding: 14 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 11 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 11 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 11, flex: 1 }}>
                         <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: withAlpha(accent, 14), alignItems: 'center', justifyContent: 'center' }}>
                           <Text style={{ color: accent, fontFamily: fonts.monoSemi, fontSize: 13 }}>{i + 1}</Text>
                         </View>
-                        <View>
-                          <Text style={{ fontSize: 15, color: colors.textMid, fontFamily: fonts.uiSemi }}>{ex.name}</Text>
+                        <View style={{ flex: 1 }}>
+                          {phase === 'training' ? (
+                            <TextInput
+                              value={ex.name}
+                              onChangeText={(t) => renameExercise(i, t)}
+                              style={{ fontSize: 15, color: colors.textMid, fontFamily: fonts.uiSemi, padding: 0 }}
+                            />
+                          ) : (
+                            <Text style={{ fontSize: 15, color: colors.textMid, fontFamily: fonts.uiSemi }}>{ex.name}</Text>
+                          )}
                           <Text style={{ fontSize: 12, color: colors.textFaint, fontFamily: fonts.ui, marginTop: 1 }}>{ex.sub}</Text>
                         </View>
                       </View>
@@ -624,8 +700,8 @@ export default function Gym() {
                       );
                     })()}
 
-                    {phase === 'training' && liveSets[ex.name] ? (
-                      <SetTracker sets={liveSets[ex.name]} accent={accent} onToggle={(si) => toggleSet(ex.name, si)} onEdit={(si, f, v) => editSet(ex.name, si, f, v)} />
+                    {phase === 'training' && liveSets[i] ? (
+                      <SetTracker sets={liveSets[i]} accent={accent} onToggle={(si) => toggleSet(i, si)} onEdit={(si, f, v) => editSet(i, si, f, v)} />
                     ) : (
                       <View style={{ flexDirection: 'row', gap: 8 }}>
                         <Stat label="Sets" value={String(ex.sets)} />
@@ -676,6 +752,9 @@ export default function Gym() {
                       <Icon name="chevron" size={16} color={colors.textMuted} />
                     </Pressable>
                   </View>
+                  <Pressable onPress={playerApi.toggleShuffle} hitSlop={8} style={{ padding: 4 }}>
+                    <Icon name="shuffle" size={16} color={shuffle ? accent : colors.textFaint} />
+                  </Pressable>
                 </LinearGradient>
               )}
             </View>

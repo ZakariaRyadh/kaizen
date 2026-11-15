@@ -1,5 +1,5 @@
 import { cancelAll, ensurePermission, scheduleAt, scheduleDaily, scheduleWeekly } from '../services/notifications';
-import { TODAY } from '../store/tasks';
+import { todayIso } from '../store/today';
 import type { Task } from '../theme/tags';
 
 // notification toggles from settings; undefined => on by default
@@ -29,7 +29,7 @@ export async function syncReminders(tasks: Task[], notifs: Notifs): Promise<void
   // ---- task reminders: fire at each timed, unfinished task today ----
   if (on(notifs, 'tasks')) {
     for (const t of tasks) {
-      if (t.date !== TODAY || t.done) continue;
+      if (t.date !== todayIso() || t.done) continue;
       const hm = parseTime(t.time);
       if (!hm) continue;
       const when = new Date();

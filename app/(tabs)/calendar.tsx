@@ -8,7 +8,8 @@ import { Icon } from '../../components/Icon';
 import { TaskSheet } from '../../components/TaskSheet';
 import { useRefresh } from '../../hooks/useRefresh';
 import { useEvents } from '../../store/events';
-import { daysInMonth, firstDow, iso, MONTH, monthName, TODAY, TODAY_DAY, useTasks, YEAR } from '../../store/tasks';
+import { daysInMonth, firstDow, iso, monthName, useTasks } from '../../store/tasks';
+import { useToday } from '../../store/today';
 import { useAccent, withAlpha } from '../../theme/AccentContext';
 import { colors, fonts } from '../../theme/colors';
 import { Task } from '../../theme/tags';
@@ -17,6 +18,9 @@ const DOW = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 export default function Calendar() {
   const { accent } = useAccent();
+  const TODAY = useToday();
+  const YEAR = Number(TODAY.slice(0, 4));
+  const MONTH = Number(TODAY.slice(5, 7)) - 1; // 0-indexed
   const [mode, setMode] = useState<'week' | 'month'>('week');
 
   // which month is on screen + which date is selected (full ISO date)

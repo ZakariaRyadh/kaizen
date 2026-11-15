@@ -5,6 +5,7 @@ import { create } from 'zustand';
 export type Track = { uri: string; name: string };
 
 const STORAGE_KEY = 'gym_playlist';
+const SHUFFLE_KEY = 'gym_playlist_shuffle';
 
 // one shared native player instance for the whole app
 let player: AudioPlayer | null = null;
@@ -15,11 +16,13 @@ type State = {
   index: number;
   playing: boolean;
   ready: boolean;
+  shuffle: boolean;
   load: () => Promise<void>;
   addTracks: (t: Track[]) => void;
   removeTrack: (uri: string) => void;
   playIndex: (i: number) => void;
   toggle: () => void;
+  toggleShuffle: () => void;
   next: () => void;
   prev: () => void;
 };
@@ -27,13 +30,25 @@ type State = {
 export const usePlayer = create<State>((set, get) => {
   const persist = (tracks: Track[]) => AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(tracks)).catch(() => {});
 
+  // didJustFinish is a level check (playbackState === ENDED), re-sent on every ~500ms
+  // poll while the player sits in ENDED — without an edge-guard, next() fires several
+  // times before replace()/play() clears that state, racing itself back onto the same track.
+  let finishHandled = false;
+
   const ensurePlayer = () => {
     if (!player) player = createAudioPlayer(undefined, { updateInterval: 500 });
     if (!wired) {
       wired = true;
       player.addListener('playbackStatusUpdate', (status: any) => {
-        if (status?.didJustFinish) get().next();
-        else if (typeof status?.playing === 'boolean') set({ playing: status.playing });
+        if (status?.didJustFinish) {
+          if (!finishHandled) {
+            finishHandled = true;
+            get().next();
+          }
+        } else {
+          finishHandled = false;
+          if (typeof status?.playing === 'boolean') set({ playing: status.playing });
+        }
       });
     }
     return player;
@@ -45,6 +60,9 @@ export const usePlayer = create<State>((set, get) => {
     const p = ensurePlayer();
     p.replace({ uri: tracks[i].uri });
     p.play();
+    // lock-screen / notification-shade "Now Playing" widget — same one Spotify/etc get,
+    // it's free once a media session is active, just needs metadata to look right.
+    p.setActiveForLockScreen(true, { title: tracks[i].name, artist: 'Kaizen' });
     set({ index: i, playing: true });
   };
 
@@ -53,12 +71,16 @@ export const usePlayer = create<State>((set, get) => {
     index: 0,
     playing: false,
     ready: false,
+    shuffle: false,
 
     load: async () => {
-      await setAudioModeAsync({ playsInSilentMode: true }).catch(() => {});
+      // shouldPlayInBackground is the one flag that keeps audio alive once you leave the app —
+      // without it the OS tears the player down the instant Kaizen goes background, like Spotify never would.
+      await setAudioModeAsync({ playsInSilentMode: true, shouldPlayInBackground: true }).catch(() => {});
       try {
         const raw = await AsyncStorage.getItem(STORAGE_KEY);
-        set({ tracks: raw ? JSON.parse(raw) : [], ready: true });
+        const shuffleRaw = await AsyncStorage.getItem(SHUFFLE_KEY);
+        set({ tracks: raw ? JSON.parse(raw) : [], shuffle: shuffleRaw === '1', ready: true });
       } catch {
         set({ ready: true });
       }
@@ -75,9 +97,20 @@ export const usePlayer = create<State>((set, get) => {
       const tracks = get().tracks.filter((t) => t.uri !== uri);
       set({ tracks, index: Math.min(get().index, Math.max(0, tracks.length - 1)) });
       persist(tracks);
+      if (tracks.length === 0) {
+        player?.pause();
+        player?.clearLockScreenControls();
+        set({ playing: false });
+      }
     },
 
     playIndex: (i) => start(i),
+
+    toggleShuffle: () => {
+      const shuffle = !get().shuffle;
+      set({ shuffle });
+      AsyncStorage.setItem(SHUFFLE_KEY, shuffle ? '1' : '0').catch(() => {});
+    },
 
     toggle: () => {
       const { tracks, index, playing } = get();
@@ -95,9 +128,17 @@ export const usePlayer = create<State>((set, get) => {
       }
     },
 
+    // didJustFinish (in ensurePlayer's listener) already calls this — that's the
+    // "auto-play next track when one finishes" behavior, for free.
     next: () => {
-      const { tracks, index } = get();
+      const { tracks, index, shuffle } = get();
       if (tracks.length === 0) return;
+      if (tracks.length === 1) return start(index);
+      if (shuffle) {
+        let ni = index;
+        while (ni === index) ni = Math.floor(Math.random() * tracks.length);
+        return start(ni);
+      }
       start((index + 1) % tracks.length);
     },
 

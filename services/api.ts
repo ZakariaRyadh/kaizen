@@ -59,6 +59,18 @@ async function request<T>(method: string, path: string, body?: object, auth = tr
   return res.json();
 }
 
+// Turn a thrown API error into the server's human message (or a fallback).
+export function errorMessage(e: unknown, fallback: string): string {
+  try {
+    const data = JSON.parse((e as Error).message);
+    const first = (v: any): string | null =>
+      typeof v === 'string' ? v : Array.isArray(v) ? first(v[0]) : v && typeof v === 'object' ? first(Object.values(v)[0]) : null;
+    return first(data.detail ?? data) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 // ── Auth ──────────────────────────────────────────────
 type Tokens = { access: string; refresh: string; user?: any };
 
