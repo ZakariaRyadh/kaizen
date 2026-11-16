@@ -1,8 +1,9 @@
-import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useState } from 'react';
-import { Platform, Pressable, Text, TextInput, View } from 'react-native';
+import { Pressable, Text, TextInput, View } from 'react-native';
 
-import { ALL_DAY, fmtDuration, fmtRange, hhmm, nextHalfHour, parseTime } from '../lib/time';
+import { TimeWheelSheet } from './TimeWheel';
+
+import { ALL_DAY, fmtDuration, fmtRange, nextHalfHour, parseTime } from '../lib/time';
 import { withAlpha } from '../theme/AccentContext';
 import { colors, fonts } from '../theme/colors';
 
@@ -17,24 +18,18 @@ type Props = {
   conflict?: string | null;           // e.g. "Overlaps with Gym (09:00–10:00)"
 };
 
-/** All day / at a time (native clock), optional duration from chips or custom h/m. */
+/** All day / at a time (wheel picker), optional duration from chips or custom h/m. */
 export function TimePicker({ time, duration, accent, onChange, conflict }: Props) {
   const timed = !!parseTime(time);
   const [clockOpen, setClockOpen] = useState(false);
   const [customOpen, setCustomOpen] = useState(false);
 
-  const p = parseTime(time) ?? parseTime(nextHalfHour())!;
-  const asDate = new Date(2000, 0, 1, p.h, p.m);
   const customDur = !!duration && !DURATIONS.includes(duration);
   const setDur = (h: string, m: string) => {
     const total = Math.min(MAX_DURATION, (parseInt(h, 10) || 0) * 60 + (parseInt(m, 10) || 0));
     onChange(time, total);
   };
 
-  const onClock = (e: DateTimePickerEvent, d?: Date) => {
-    if (Platform.OS === 'android') setClockOpen(false); // Android dialog closes itself
-    if (e.type === 'set' && d) onChange(hhmm(d.getHours(), d.getMinutes()), duration);
-  };
 
   return (
     <View style={{ gap: 10 }}>
@@ -96,22 +91,14 @@ export function TimePicker({ time, duration, accent, onChange, conflict }: Props
             <Text style={{ color: colors.amber, fontFamily: fonts.ui, fontSize: 12.5 }}>⚠ {conflict}</Text>
           )}
 
-          {clockOpen && (
-            <DateTimePicker
-              value={asDate}
-              mode="time"
-              is24Hour
-              display={Platform.OS === 'ios' ? 'spinner' : 'clock'}
-              minuteInterval={5}
-              onChange={onClock}
-              themeVariant="dark"
-            />
-          )}
-          {clockOpen && Platform.OS === 'ios' && (
-            <Pressable onPress={() => setClockOpen(false)} style={{ alignSelf: 'flex-end', paddingHorizontal: 12, paddingVertical: 6 }}>
-              <Text style={{ color: accent, fontFamily: fonts.uiSemi }}>Done</Text>
-            </Pressable>
-          )}
+          <TimeWheelSheet
+            visible={clockOpen}
+            value={time}
+            title="Start time"
+            accent={accent}
+            onClose={() => setClockOpen(false)}
+            onDone={(v) => onChange(v, duration)}
+          />
         </>
       )}
     </View>

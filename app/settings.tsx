@@ -5,11 +5,13 @@ import * as IntentLauncher from 'expo-intent-launcher';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, Image, Linking, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Image, Linking, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { confirm, notice, toast } from '../components/Dialog';
 import { Icon } from '../components/Icon';
 import { TagPicker } from '../components/TagPicker';
+import { TimeWheelSheet } from '../components/TimeWheel';
 import { BASE_URL, changePassword, deleteAccount, errorMessage } from '../services/api';
 import { ensurePermission, Notifications } from '../services/notifications';
 import { useAuth } from '../store/auth';
@@ -31,15 +33,16 @@ const WIDGET_META: Meta[] = [
 
 const NOTIF_META: Meta[] = [
   { key: 'tasks', label: 'Task reminders', desc: 'For tasks with a time, with a Mark done button' },
-  { key: 'workout', label: 'Workout time', desc: 'Daily at 17:00, skipped once you trained' },
+  { key: 'workout', label: 'Workout reminder', desc: 'Daily, skipped once you trained' },
   { key: 'rest', label: 'Rest timer', desc: 'Lock-screen countdown + alert when rest ends' },
-  { key: 'learning', label: 'Learning nudge', desc: 'Daily at 19:30, skipped once you studied' },
+  { key: 'learning', label: 'Learning reminder', desc: 'Daily, skipped once you studied' },
 ];
 
 export default function Settings() {
   const { accent, setAccent } = useAccent();
   const { user, logout, updateName, setAvatar } = useAuth();
-  const { widgets, notifs, restSeconds, progressDays, taskLead, setWidget, setNotif, setRest, setProgress, setTaskLead, pushAccent } = useSettings();
+  const { widgets, notifs, restSeconds, progressDays, taskLead, workoutAt, learningAt, setWidget, setNotif, setRest, setProgress, setTaskLead, setReminderTime, pushAccent } = useSettings();
+  const [timeFor, setTimeFor] = useState<'workout' | 'learning' | null>(null);
 
   // OS notification permission status (so toggles aren't a silent no-op)
   const [permGranted, setPermGranted] = useState<boolean | null>(null);
@@ -50,16 +53,27 @@ export default function Settings() {
     const ok = await ensurePermission();
     setPermGranted(ok);
     if (ok) requestSync(0);
-    else Linking.openSettings().catch(() => Alert.alert('Blocked', 'Enable notifications for Kaizen in your phone settings.'));
+    else Linking.openSettings().catch(() => notice({ title: 'Notifications blocked', message: 'Enable notifications for Kaizen in your phone settings.', tone: 'error' }));
   };
   // Android 12+: exact-alarm scheduling needs a separate, manually-granted permission —
   // without it, reminders silently degrade to inexact (often "only fires once you reopen the app").
-  const openExactAlarmSettings = () => {
+  // Tries the exact "Alarms & reminders" page, then the app's info page, then app settings.
+  const openExactAlarmSettings = async () => {
     if (Platform.OS !== 'android') return;
-    IntentLauncher.startActivityAsync('android.settings.REQUEST_SCHEDULE_EXACT_ALARM_PERMISSION', {
-      data: `package:${Constants.expoConfig?.android?.package}`,
-    }).catch(() => IntentLauncher.startActivityAsync('android.settings.APPLICATION_DETAILS_SETTINGS'));
+    const data = `package:${Constants.expoConfig?.android?.package ?? 'com.zakariaryadh.kaizen'}`;
+    try {
+      await IntentLauncher.startActivityAsync('android.settings.REQUEST_SCHEDULE_EXACT_ALARM_PERMISSION', { data });
+    } catch {
+      try {
+        await IntentLauncher.startActivityAsync('android.settings.APPLICATION_DETAILS_SETTINGS', { data });
+      } catch {
+        Linking.openSettings().catch(() => {});
+      }
+    }
+    requestSync(0); // reschedule with exact timing if it was just allowed
   };
+  // Android 12+ only (older versions allow exact alarms by default)
+  const needsExactAlarm = Platform.OS === 'android' && Number(Platform.Version) >= 31;
   // profile photo: pick → crop square → shrink to 256px JPEG → base64 → save
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const pickPhoto = async () => {
@@ -80,13 +94,15 @@ export default function Settings() {
       );
       await setAvatar(`data:image/jpeg;base64,${out.base64}`);
     } catch {
-      Alert.alert('Error', 'Could not set the photo.');
+      notice({ title: 'Could not set the photo', message: 'Try another picture.', tone: 'error' });
     } finally {
       setUploadingPhoto(false);
     }
   };
 
   const signOut = async () => {
+    const ok = await confirm({ title: 'Sign out?', message: "Your data stays saved in your account. Reminders on this phone stop until you sign back in.", confirmText: 'Sign out', destructive: true });
+    if (!ok) return;
     await logout();
     router.replace('/login');
   };
@@ -108,9 +124,9 @@ export default function Settings() {
     setSavingName(true);
     try {
       await updateName(n);
-      Alert.alert('Saved', 'Name updated.');
+      toast('Name updated');
     } catch {
-      Alert.alert('Error', 'Could not update username.');
+      notice({ title: 'Could not update your name', message: 'Check your connection and try again.', tone: 'error' });
     } finally {
       setSavingName(false);
     }
@@ -127,36 +143,31 @@ export default function Settings() {
   const [deletePw, setDeletePw] = useState('');
   const [deleting, setDeleting] = useState(false);
   const confirmDelete = () => {
-    if (!deletePw) return Alert.alert('Password needed', 'Enter your password to delete your account.');
-    Alert.alert(
-      'Delete account?',
-      'This permanently deletes your account and all your tasks, notes, workouts and other data. It cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            setDeleting(true);
-            try {
-              await deleteAccount(deletePw);
-              await logout();
-              router.replace('/login');
-            } catch (e) {
-              Alert.alert('Error', errorMessage(e, 'Could not delete the account.'));
-            } finally {
-              setDeleting(false);
-            }
-          },
-        },
-      ],
-    );
+    if (!deletePw) return notice({ title: 'Password needed', message: 'Enter your password to delete your account.', tone: 'error' });
+    confirm({
+      title: 'Delete your account?',
+      message: 'This permanently deletes your account and all your tasks, notes, workouts and other data. It cannot be undone.',
+      confirmText: 'Delete forever',
+      destructive: true,
+    }).then(async (ok) => {
+      if (!ok) return;
+      setDeleting(true);
+      try {
+        await deleteAccount(deletePw);
+        await logout();
+        router.replace('/login');
+      } catch (e) {
+        notice({ title: 'Could not delete the account', message: errorMessage(e, 'Try again.'), tone: 'error' });
+      } finally {
+        setDeleting(false);
+      }
+    });
   };
 
   const savePassword = async () => {
-    if (!currentPw || !newPw) return Alert.alert('Missing fields', 'Enter your current and new password.');
-    if (newPw.length < 8) return Alert.alert('Too short', 'New password must be at least 8 characters.');
-    if (newPw !== confirmPw) return Alert.alert("Doesn't match", 'New password and confirmation must match.');
+    if (!currentPw || !newPw) return notice({ title: 'Missing fields', message: 'Enter your current and new password.', tone: 'error' });
+    if (newPw.length < 8) return notice({ title: 'Too short', message: 'The new password needs at least 8 characters.', tone: 'error' });
+    if (newPw !== confirmPw) return notice({ title: "Passwords don't match", message: 'The new password and its confirmation must match.', tone: 'error' });
     setSavingPw(true);
     try {
       await changePassword(currentPw, newPw);
@@ -164,9 +175,9 @@ export default function Settings() {
       setNewPw('');
       setConfirmPw('');
       setPwOpen(false);
-      Alert.alert('Saved', 'Password updated.');
+      toast('Password updated');
     } catch (e: any) {
-      Alert.alert('Error', errorMessage(e, 'Could not change password.'));
+      notice({ title: 'Could not change password', message: errorMessage(e, 'Try again.'), tone: 'error' });
     } finally {
       setSavingPw(false);
     }
@@ -352,7 +363,7 @@ export default function Settings() {
             </View>
           )}
 
-          {Platform.OS === 'android' && (
+          {needsExactAlarm && (
             <Pressable onPress={openExactAlarmSettings} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 15, paddingHorizontal: 16, paddingVertical: 14 }}>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 14.5, color: colors.textSoft, fontFamily: fonts.uiSemi }}>Alarms & reminders</Text>
@@ -365,6 +376,15 @@ export default function Settings() {
           {NOTIF_META.map((m) => (
             <View key={m.key} style={{ gap: 8 }}>
               <ToggleRow label={m.label} desc={m.desc} on={notifs[m.key] !== false} accent={accent} onToggle={() => setNotif(m.key, !(notifs[m.key] !== false))} />
+              {(m.key === 'workout' || m.key === 'learning') && notifs[m.key] !== false && (
+                <Pressable onPress={() => setTimeFor(m.key as 'workout' | 'learning')} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingLeft: 4 }}>
+                  <Text style={{ color: colors.textFaint, fontFamily: fonts.ui, fontSize: 12.5 }}>Remind me at</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.card, borderWidth: 1, borderColor: withAlpha(accent, 40), borderRadius: 11, paddingHorizontal: 12, paddingVertical: 7 }}>
+                    <Text style={{ color: colors.text, fontFamily: fonts.monoSemi, fontSize: 14 }}>{m.key === 'workout' ? workoutAt : learningAt}</Text>
+                    <Text style={{ color: accent, fontFamily: fonts.uiSemi, fontSize: 12 }}>Change</Text>
+                  </View>
+                </Pressable>
+              )}
               {m.key === 'tasks' && notifs.tasks !== false && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingLeft: 4 }}>
                   <Text style={{ color: colors.textFaint, fontFamily: fonts.ui, fontSize: 12.5 }}>Remind me</Text>
@@ -382,6 +402,18 @@ export default function Settings() {
               )}
             </View>
           ))}
+          <TimeWheelSheet
+            visible={!!timeFor}
+            value={timeFor === 'learning' ? learningAt : workoutAt}
+            title={timeFor === 'learning' ? 'Learning reminder' : 'Workout reminder'}
+            accent={accent}
+            onClose={() => setTimeFor(null)}
+            onDone={(v) => {
+              if (!timeFor) return;
+              setReminderTime(timeFor, v);
+              toast(`${timeFor === 'learning' ? 'Learning' : 'Workout'} reminder set for ${v}`);
+            }}
+          />
         </Section>
 
         <Pressable onPress={signOut} style={{ backgroundColor: withAlpha(colors.red, 12), borderWidth: 1, borderColor: withAlpha(colors.red, 30), borderRadius: 15, paddingVertical: 15, alignItems: 'center' }}>

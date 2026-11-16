@@ -56,8 +56,7 @@
           "imageWidth": 160,
           "resizeMode": "contain"
         }
-      ],
-      "@react-native-community/datetimepicker"
+      ]
     ],
     "extra": {
       "router": {},

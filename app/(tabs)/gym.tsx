@@ -1,9 +1,10 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { confirm } from '../../components/Dialog';
 import { Icon } from '../../components/Icon';
 import { ProgramEditor } from '../../components/ProgramEditor';
 import { ProgressStat } from '../../components/ProgressStat';
@@ -761,10 +762,9 @@ export default function Gym() {
                       <Pressable
                         key={w.id}
                         onLongPress={() =>
-                          Alert.alert('Delete entry?', `${w.kg} kg · ${fmtDay(w.date)}`, [
-                            { text: 'Cancel', style: 'cancel' },
-                            { text: 'Delete', style: 'destructive', onPress: () => weightApi.remove(w.id) },
-                          ])
+                          confirm({ title: 'Delete entry?', message: `${w.kg} kg · ${fmtDay(w.date)}`, confirmText: 'Delete', destructive: true }).then((ok) => {
+                            if (ok) weightApi.remove(w.id);
+                          })
                         }
                         style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 13, paddingHorizontal: 14, paddingVertical: 11 }}
                       >
@@ -796,10 +796,9 @@ export default function Gym() {
                   <Pressable
                     key={lg.id}
                     onLongPress={() =>
-                      Alert.alert('Delete session?', `${lg.day} · ${lg.date}`, [
-                        { text: 'Cancel', style: 'cancel' },
-                        { text: 'Delete', style: 'destructive', onPress: () => gym.deleteSession(lg.id) },
-                      ])
+                      confirm({ title: 'Delete session?', message: `${lg.day} · ${lg.date}`, confirmText: 'Delete', destructive: true }).then((ok) => {
+                        if (ok) gym.deleteSession(lg.id);
+                      })
                     }
                     style={{ flexDirection: 'row', alignItems: 'center', gap: 13, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 16, padding: 14 }}
                   >

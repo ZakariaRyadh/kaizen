@@ -1,8 +1,9 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { confirm } from '../../components/Dialog';
 import { Icon } from '../../components/Icon';
 import { EditSessionSheet, IdeaSheet, NewSubjectsSheet, SubjectDetailSheet, SubjectSheet, SummarySheet } from '../../components/LearnSheets';
 import { ProgressStat } from '../../components/ProgressStat';
@@ -65,10 +66,9 @@ export default function Learn() {
   const [newSubjectsSheet, setNewSubjectsSheet] = useState(false);
 
   const deleteSubject = (s: Subject) =>
-    Alert.alert('Delete subject?', `${s.name} — kept sessions stay in your log.`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => learning.deleteSubject(s.id) },
-    ]);
+    confirm({ title: 'Delete subject?', message: `${s.name} — its past sessions stay in your log.`, confirmText: 'Delete', destructive: true }).then((ok) => {
+      if (ok) learning.deleteSubject(s.id);
+    });
 
   const { refreshing, onRefresh } = useRefresh([useLearning.getState().load]);
 
@@ -400,10 +400,9 @@ export default function Learn() {
                     key={s.id}
                     onPress={() => setEditSession(s)}
                     onLongPress={() =>
-                      Alert.alert('Delete entry?', `${s.subjectName} · ${fmtDay(s.date)}`, [
-                        { text: 'Cancel', style: 'cancel' },
-                        { text: 'Delete', style: 'destructive', onPress: () => learning.deleteSession(s.id) },
-                      ])
+                      confirm({ title: 'Delete entry?', message: `${s.subjectName} · ${fmtDay(s.date)}`, confirmText: 'Delete', destructive: true }).then((ok) => {
+                        if (ok) learning.deleteSession(s.id);
+                      })
                     }
                     style={{ backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 16, padding: 14, gap: 6 }}
                   >

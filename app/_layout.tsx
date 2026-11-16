@@ -17,6 +17,7 @@ import { ActivityIndicator, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { DialogHost } from '../components/Dialog';
 import { useAuth } from '../store/auth';
 import { AccentProvider } from '../theme/AccentContext';
 import { colors } from '../theme/colors';
@@ -95,6 +96,7 @@ export default function RootLayout() {
           <AccentProvider>
             <StatusBar style="light" />
             <RootNavigator />
+            <DialogHost />
           </AccentProvider>
         </ThemeProvider>
       </SafeAreaProvider>

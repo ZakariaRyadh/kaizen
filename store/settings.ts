@@ -31,6 +31,8 @@ type State = {
   progressDays: number;
   taskLead: number;
   tags: TagDef[];
+  workoutAt: string; // 'HH:MM' daily workout reminder
+  learningAt: string; // 'HH:MM' daily learning reminder
   loaded: boolean;
   load: () => Promise<{ accent: string | null }>;
   setWidget: (key: string, on: boolean) => void;
@@ -38,6 +40,7 @@ type State = {
   setRest: (seconds: number) => void;
   setProgress: (days: number) => void;
   setTaskLead: (min: number) => void;
+  setReminderTime: (which: 'workout' | 'learning', hhmm: string) => void;
   addTag: (tag: TagDef) => void;
   removeTag: (name: string) => void;
   pushAccent: (hex: string) => void;
@@ -60,6 +63,8 @@ export const useSettings = create<State>((set, get) => ({
   progressDays: DEFAULT_PROGRESS,
   taskLead: 0,
   tags: TAG_PRESETS,
+  workoutAt: '17:00',
+  learningAt: '19:30',
   loaded: false,
 
   load: async () => {
@@ -67,7 +72,7 @@ export const useSettings = create<State>((set, get) => ({
       const r = await apiGet<any>('/settings/');
       const widgets = { ...DEFAULT_WIDGETS, ...(r.widgets ?? {}) };
       const notifs = { ...DEFAULT_NOTIFS, ...(r.notifications ?? {}) };
-      set({ widgets, notifs, accent: r.accent ?? null, restSeconds: r.rest_seconds ?? DEFAULT_REST, progressDays: r.progress_days ?? DEFAULT_PROGRESS, taskLead: r.task_lead_min ?? 0, tags: Array.isArray(r.tags) ? r.tags : TAG_PRESETS, loaded: true });
+      set({ widgets, notifs, accent: r.accent ?? null, restSeconds: r.rest_seconds ?? DEFAULT_REST, progressDays: r.progress_days ?? DEFAULT_PROGRESS, taskLead: r.task_lead_min ?? 0, tags: Array.isArray(r.tags) ? r.tags : TAG_PRESETS, workoutAt: r.workout_time ?? '17:00', learningAt: r.learning_time ?? '19:30', loaded: true });
       return { accent: r.accent ?? null };
     } catch {
       set({ loaded: true });
@@ -100,6 +105,12 @@ export const useSettings = create<State>((set, get) => ({
   setTaskLead: (min) => {
     set({ taskLead: min });
     apiPatch('/settings/', { task_lead_min: min }).catch(() => {});
+  },
+
+  setReminderTime: (which, hhmm) => {
+    if (which === 'workout') set({ workoutAt: hhmm });
+    else set({ learningAt: hhmm });
+    apiPatch('/settings/', { [`${which}_time`]: hhmm }).catch(() => {});
   },
 
   addTag: (tag) => {

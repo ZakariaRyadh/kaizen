@@ -36,8 +36,6 @@ const MAX_SCHEDULED = 60; // iOS keeps at most 64 pending; leave room for the re
 const PLAN_KEY = 'reminders:plan';
 const LOGGED_KEY = 'reminders:logged';
 
-const WORKOUT_AT = { h: 17, m: 0 };
-const LEARNING_AT = { h: 19, m: 30 };
 
 const at = (iso: string, h: number, m: number) => {
   const [y, mo, d] = iso.split('-').map(Number);
@@ -52,7 +50,9 @@ const addDays = (iso: string, n: number) => {
 function plan(): Reminder[] {
   const now = Date.now();
   const today = todayIso();
-  const { notifs, taskLead } = useSettings.getState();
+  const { notifs, taskLead, workoutAt, learningAt } = useSettings.getState();
+  const workAt = parseTime(workoutAt) ?? { h: 17, m: 0 };
+  const learnAt = parseTime(learningAt) ?? { h: 19, m: 30 };
   const on = (k: string) => notifs[k] !== false;
   const out: Reminder[] = [];
   const days = Array.from({ length: HORIZON_DAYS }, (_, i) => addDays(today, i));
@@ -79,11 +79,11 @@ function plan(): Reminder[] {
   const studiedToday = useLearning.getState().sessions.some((s) => s.done && s.date === today);
   for (const [i, d] of days.entries()) {
     if (on('workout') && !(i === 0 && trainedToday)) {
-      const when = at(d, WORKOUT_AT.h, WORKOUT_AT.m);
+      const when = at(d, workAt.h, workAt.m);
       if (when > now) out.push({ id: `workout-${d}`, title: 'Workout time', body: 'Time to train — tap to open Gym.', kind: 'workout', at: when });
     }
     if (on('learning') && !(i === 0 && studiedToday)) {
-      const when = at(d, LEARNING_AT.h, LEARNING_AT.m);
+      const when = at(d, learnAt.h, learnAt.m);
       if (when > now) out.push({ id: `learning-${d}`, title: 'Learn something', body: 'Start a study session or pick a saved idea.', kind: 'learning', at: when });
     }
   }
@@ -204,7 +204,7 @@ export function startReminders(): () => void {
       if (s.sessions !== p.sessions) requestSync();
     }),
     useSettings.subscribe((s, p) => {
-      if (s.notifs !== p.notifs || s.taskLead !== p.taskLead || s.loaded !== p.loaded) requestSync(200);
+      if (s.notifs !== p.notifs || s.taskLead !== p.taskLead || s.workoutAt !== p.workoutAt || s.learningAt !== p.learningAt || s.loaded !== p.loaded) requestSync(200);
     }),
   ];
   const app = AppState.addEventListener('change', (st) => {

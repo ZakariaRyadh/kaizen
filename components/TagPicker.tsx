@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Alert, Pressable, Text, TextInput, View } from 'react-native';
+import { Pressable, Text, TextInput, View } from 'react-native';
 
+import { confirm, toast } from './Dialog';
 import { useNotes } from '../store/notes';
 import { useSettings } from '../store/settings';
 import { useTasks } from '../store/tasks';
@@ -10,20 +11,15 @@ import { NO_TAG_COLOR, TAG_COLORS } from '../theme/tags';
 
 /** Ask, then delete a tag from the list and clear it from every task and note that uses it. */
 export function confirmDeleteTag(name: string) {
-  Alert.alert(`Delete "${name}"?`, 'It is removed from your tags and from every task and note that uses it.', [
-    { text: 'Cancel', style: 'cancel' },
-    {
-      text: 'Delete',
-      style: 'destructive',
-      onPress: () => {
-        useSettings.getState().removeTag(name);
-        const { tasks, upsert } = useTasks.getState();
-        tasks.filter((t) => t.tag === name).forEach((t) => upsert({ ...t, tag: '', tagColor: NO_TAG_COLOR }).catch(() => {}));
-        const notes = useNotes.getState();
-        notes.notes.filter((n) => n.tag === name).forEach((n) => notes.upsert({ ...n, tag: '', tagColor: NO_TAG_COLOR }).catch(() => {}));
-      },
-    },
-  ]);
+  confirm({ title: `Delete "${name}"?`, message: 'It is removed from your tags and from every task and note that uses it.', confirmText: 'Delete', destructive: true }).then((ok) => {
+    if (!ok) return;
+    useSettings.getState().removeTag(name);
+    const { tasks, upsert } = useTasks.getState();
+    tasks.filter((t) => t.tag === name).forEach((t) => upsert({ ...t, tag: '', tagColor: NO_TAG_COLOR }).catch(() => {}));
+    const notes = useNotes.getState();
+    notes.notes.filter((n) => n.tag === name).forEach((n) => notes.upsert({ ...n, tag: '', tagColor: NO_TAG_COLOR }).catch(() => {}));
+    toast(`Tag "${name}" deleted`);
+  });
 }
 
 type Props = {

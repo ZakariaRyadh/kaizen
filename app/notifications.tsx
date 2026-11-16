@@ -1,7 +1,8 @@
 import { router } from 'expo-router';
-import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { confirm } from '../components/Dialog';
 import { Icon, IconName } from '../components/Icon';
 import { useNotifications } from '../store/notifications';
 import { useAccent, withAlpha } from '../theme/AccentContext';
@@ -50,10 +51,9 @@ export default function NotificationsScreen() {
     .map((g) => ({ title: g, items: items.filter((n) => groupOf(n.createdAt) === g) }))
     .filter((g) => g.items.length);
   const confirmClear = () =>
-    Alert.alert('Clear all notifications?', 'This removes everything from your inbox.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Clear', style: 'destructive', onPress: () => clear() },
-    ]);
+    confirm({ title: 'Clear all notifications?', message: 'This removes everything from your inbox.', confirmText: 'Clear', destructive: true }).then((ok) => {
+      if (ok) clear();
+    });
   const open = (id: string, kind: string, read: boolean) => {
     if (!read) markRead(id);
     const path = ROUTE[kind];
@@ -109,10 +109,9 @@ export default function NotificationsScreen() {
                   key={n.id}
                   onPress={() => open(n.id, n.kind, n.read)}
                   onLongPress={() =>
-                    Alert.alert('Delete notification?', n.title, [
-                      { text: 'Cancel', style: 'cancel' },
-                      { text: 'Delete', style: 'destructive', onPress: () => remove(n.id) },
-                    ])
+                    confirm({ title: 'Delete notification?', message: n.title, confirmText: 'Delete', destructive: true }).then((ok) => {
+                      if (ok) remove(n.id);
+                    })
                   }
                   delayLongPress={350}
                   style={{
