@@ -1,6 +1,6 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Image, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { Gesture } from 'react-native-gesture-handler';
 import ReorderableList, {
@@ -105,7 +105,11 @@ export default function Home() {
     return n;
   }, [sessions]);
 
-  const tagsPresent = useMemo(() => ['All', ...Array.from(new Set(today.map((t) => t.tag)))], [today]);
+  const tagsPresent = useMemo(() => ['All', ...Array.from(new Set(today.map((t) => t.tag).filter(Boolean)))], [today]);
+  // a deleted (or no longer used) tag drops its filter back to All
+  useEffect(() => {
+    if (!tagsPresent.includes(filter)) setFilter('All');
+  }, [tagsPresent, filter]);
   const reorderable = filter === 'All';
   const shown = reorderable ? today : today.filter((t) => t.tag === filter);
 
@@ -352,9 +356,11 @@ function TaskRow({
         </Text>
       </Pressable>
 
-      <Text style={{ fontSize: 11, fontFamily: fonts.uiSemi, color: item.tagColor, backgroundColor: withAlpha(item.tagColor, 14), paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8, overflow: 'hidden' }}>
-        {item.tag}
-      </Text>
+      {!!item.tag && (
+        <Text style={{ fontSize: 11, fontFamily: fonts.uiSemi, color: item.tagColor, backgroundColor: withAlpha(item.tagColor, 14), paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8, overflow: 'hidden' }}>
+          {item.tag}
+        </Text>
+      )}
 
       {dragEnabled && (
         <Pressable onLongPress={drag} delayLongPress={300} hitSlop={8} style={{ paddingLeft: 2 }}>

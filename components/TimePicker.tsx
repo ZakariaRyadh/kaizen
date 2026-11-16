@@ -1,18 +1,13 @@
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useState } from 'react';
-import { Platform, Pressable, Text, View } from 'react-native';
+import { Platform, Pressable, Text, TextInput, View } from 'react-native';
 
 import { ALL_DAY, fmtDuration, fmtRange, hhmm, nextHalfHour, parseTime } from '../lib/time';
 import { withAlpha } from '../theme/AccentContext';
 import { colors, fonts } from '../theme/colors';
 
-const PRESETS = [
-  { label: 'Morning', time: '09:00' },
-  { label: 'Noon', time: '12:00' },
-  { label: 'Afternoon', time: '15:00' },
-  { label: 'Evening', time: '19:00' },
-];
 const DURATIONS = [0, 15, 30, 45, 60, 90, 120];
+const MAX_DURATION = 24 * 60;
 
 type Props = {
   time: string;                       // 'HH:MM' or 'All day'
@@ -22,14 +17,19 @@ type Props = {
   conflict?: string | null;           // e.g. "Overlaps with Gym (09:00–10:00)"
 };
 
-/** All day / at a time, quick presets, native clock for anything else, optional duration. */
+/** All day / at a time (native clock), optional duration from chips or custom h/m. */
 export function TimePicker({ time, duration, accent, onChange, conflict }: Props) {
   const timed = !!parseTime(time);
   const [clockOpen, setClockOpen] = useState(false);
+  const [customOpen, setCustomOpen] = useState(false);
 
   const p = parseTime(time) ?? parseTime(nextHalfHour())!;
   const asDate = new Date(2000, 0, 1, p.h, p.m);
-  const custom = timed && !PRESETS.some((x) => x.time === time);
+  const customDur = !!duration && !DURATIONS.includes(duration);
+  const setDur = (h: string, m: string) => {
+    const total = Math.min(MAX_DURATION, (parseInt(h, 10) || 0) * 60 + (parseInt(m, 10) || 0));
+    onChange(time, total);
+  };
 
   const onClock = (e: DateTimePickerEvent, d?: Date) => {
     if (Platform.OS === 'android') setClockOpen(false); // Android dialog closes itself
@@ -65,24 +65,32 @@ export function TimePicker({ time, duration, accent, onChange, conflict }: Props
             style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.card, borderWidth: 1, borderColor: withAlpha(accent, 40), borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12 }}
           >
             <Text style={{ fontFamily: fonts.monoSemi, fontSize: 24, color: colors.text }}>{fmtRange(time, duration)}</Text>
-            <Text style={{ color: accent, fontFamily: fonts.uiSemi, fontSize: 13 }}>{duration ? fmtDuration(duration) : 'Change'}</Text>
+            <Text style={{ color: accent, fontFamily: fonts.uiSemi, fontSize: 13 }}>Change time</Text>
           </Pressable>
-
-          {/* quick picks */}
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
-            {PRESETS.map((x) => (
-              <Chip key={x.time} on={time === x.time} accent={accent} onPress={() => onChange(x.time, duration)} label={x.label} sub={x.time} />
-            ))}
-            <Chip on={custom} accent={accent} onPress={() => setClockOpen(true)} label="Custom…" sub={custom ? time : undefined} />
-          </View>
 
           {/* duration */}
           <Text style={{ fontSize: 12, color: colors.textFainter, fontFamily: fonts.uiSemi, textTransform: 'uppercase', letterSpacing: 1, marginTop: 4 }}>Duration</Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
             {DURATIONS.map((m) => (
-              <Chip key={m} on={duration === m} accent={accent} onPress={() => onChange(time, m)} label={m ? fmtDuration(m) : 'None'} />
+              <Chip
+                key={m}
+                on={duration === m && !customOpen}
+                accent={accent}
+                onPress={() => {
+                  setCustomOpen(false);
+                  onChange(time, m);
+                }}
+                label={m ? fmtDuration(m) : 'None'}
+              />
             ))}
+            <Chip on={customOpen || customDur} accent={accent} onPress={() => setCustomOpen(true)} label={customDur ? fmtDuration(duration) : 'Custom'} />
           </View>
+          {customOpen && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <NumBox value={Math.floor(duration / 60)} unit="h" max={24} onChange={(v) => setDur(v, String(duration % 60))} />
+              <NumBox value={duration % 60} unit="min" max={59} onChange={(v) => setDur(String(Math.floor(duration / 60)), v)} />
+            </View>
+          )}
 
           {!!conflict && (
             <Text style={{ color: colors.amber, fontFamily: fonts.ui, fontSize: 12.5 }}>⚠ {conflict}</Text>
@@ -106,6 +114,24 @@ export function TimePicker({ time, duration, accent, onChange, conflict }: Props
           )}
         </>
       )}
+    </View>
+  );
+}
+
+// small numeric field: "1 h", "30 min"
+function NumBox({ value, unit, max, onChange }: { value: number; unit: string; max: number; onChange: (v: string) => void }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 11, paddingHorizontal: 12 }}>
+      <TextInput
+        value={value ? String(value) : ''}
+        onChangeText={(t) => onChange(String(Math.min(max, parseInt(t.replace(/\D/g, ''), 10) || 0)))}
+        keyboardType="number-pad"
+        maxLength={2}
+        placeholder="0"
+        placeholderTextColor={colors.textFaint}
+        style={{ minWidth: 28, color: colors.text, fontFamily: fonts.monoSemi, fontSize: 16, paddingVertical: 8, textAlign: 'center' }}
+      />
+      <Text style={{ color: colors.textMuted, fontFamily: fonts.uiSemi, fontSize: 13 }}>{unit}</Text>
     </View>
   );
 }

@@ -1,6 +1,8 @@
-// Preset task/note tags with their colors. Users can also type a custom
-// name and pick any of these colors.
-export const TAG_PRESETS = [
+// Starter tags for a new account. Users add/delete their own (saved in settings).
+export type TagDef = { name: string; color: string };
+export const NO_TAG_COLOR = '#6b6b78';
+
+export const TAG_PRESETS: TagDef[] = [
   { name: 'Work', color: '#3b82f6' },
   { name: 'Health', color: '#22c55e' },
   { name: 'Personal', color: '#f59e0b' },

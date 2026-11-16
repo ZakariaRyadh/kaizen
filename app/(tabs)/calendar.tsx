@@ -251,7 +251,7 @@ export default function Calendar() {
                   <Text style={{ fontSize: 14.5, color: t.done ? colors.textFaint : colors.textMid, fontFamily: fonts.ui, textDecorationLine: t.done ? 'line-through' : 'none' }}>{t.title}</Text>
                   <Text style={{ fontSize: 12, color: colors.textFaint, fontFamily: fonts.mono, marginTop: 2 }}>{fmtRange(t.time, t.duration)}{t.subtasks.length ? ` · ${subtaskProgress(t.subtasks)}` : ''}</Text>
                 </Pressable>
-                <Text style={{ fontSize: 11, fontFamily: fonts.uiSemi, color: t.tagColor, backgroundColor: withAlpha(t.tagColor, 14), paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8, overflow: 'hidden' }}>{t.tag}</Text>
+                {!!t.tag && <Text style={{ fontSize: 11, fontFamily: fonts.uiSemi, color: t.tagColor, backgroundColor: withAlpha(t.tagColor, 14), paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8, overflow: 'hidden' }}>{t.tag}</Text>}
               </View>
               <SubtaskList items={t.subtasks} accent={accent} onToggle={(sid) => taskStore.toggleSubtask(t.id, sid)} />
               </View>

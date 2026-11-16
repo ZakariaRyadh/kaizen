@@ -9,6 +9,7 @@ import { Alert, Image, Linking, Platform, Pressable, ScrollView, Text, TextInput
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Icon } from '../components/Icon';
+import { TagPicker } from '../components/TagPicker';
 import { BASE_URL, changePassword, deleteAccount, errorMessage } from '../services/api';
 import { ensurePermission, Notifications } from '../services/notifications';
 import { useAuth } from '../store/auth';
@@ -33,7 +34,6 @@ const NOTIF_META: Meta[] = [
   { key: 'workout', label: 'Workout time', desc: 'Daily at 17:00, skipped once you trained' },
   { key: 'rest', label: 'Rest timer', desc: 'Lock-screen countdown + alert when rest ends' },
   { key: 'learning', label: 'Learning nudge', desc: 'Daily at 19:30, skipped once you studied' },
-  { key: 'weekly', label: 'Weekly recap', desc: 'Sundays at 18:00' },
 ];
 
 export default function Settings() {
@@ -289,6 +289,14 @@ export default function Settings() {
               );
             })}
           </View>
+        </Section>
+
+        {/* tags used by tasks + notes */}
+        <Section title="Tags">
+          <TagPicker manage accent={accent} />
+          <Text style={{ fontSize: 11.5, color: colors.textFaint, fontFamily: fonts.ui }}>
+            Tap a tag to delete it. It's also removed from tasks and notes that use it.
+          </Text>
         </Section>
 
         {/* home widgets */}

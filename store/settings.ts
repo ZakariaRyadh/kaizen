@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 import { apiGet, apiPatch } from '../services/api';
+import { TAG_PRESETS, TagDef } from '../theme/tags';
 
 export const DEFAULT_WIDGETS: Record<string, boolean> = {
   today: true,
@@ -14,7 +15,6 @@ export const DEFAULT_NOTIFS: Record<string, boolean> = {
   workout: true,
   rest: true,
   learning: true,
-  weekly: false,
 };
 
 export const REST_OPTIONS = [60, 90, 120, 180];
@@ -30,6 +30,7 @@ type State = {
   restSeconds: number;
   progressDays: number;
   taskLead: number;
+  tags: TagDef[];
   loaded: boolean;
   load: () => Promise<{ accent: string | null }>;
   setWidget: (key: string, on: boolean) => void;
@@ -37,6 +38,8 @@ type State = {
   setRest: (seconds: number) => void;
   setProgress: (days: number) => void;
   setTaskLead: (min: number) => void;
+  addTag: (tag: TagDef) => void;
+  removeTag: (name: string) => void;
   pushAccent: (hex: string) => void;
 };
 
@@ -56,6 +59,7 @@ export const useSettings = create<State>((set, get) => ({
   restSeconds: DEFAULT_REST,
   progressDays: DEFAULT_PROGRESS,
   taskLead: 0,
+  tags: TAG_PRESETS,
   loaded: false,
 
   load: async () => {
@@ -63,7 +67,7 @@ export const useSettings = create<State>((set, get) => ({
       const r = await apiGet<any>('/settings/');
       const widgets = { ...DEFAULT_WIDGETS, ...(r.widgets ?? {}) };
       const notifs = { ...DEFAULT_NOTIFS, ...(r.notifications ?? {}) };
-      set({ widgets, notifs, accent: r.accent ?? null, restSeconds: r.rest_seconds ?? DEFAULT_REST, progressDays: r.progress_days ?? DEFAULT_PROGRESS, taskLead: r.task_lead_min ?? 0, loaded: true });
+      set({ widgets, notifs, accent: r.accent ?? null, restSeconds: r.rest_seconds ?? DEFAULT_REST, progressDays: r.progress_days ?? DEFAULT_PROGRESS, taskLead: r.task_lead_min ?? 0, tags: Array.isArray(r.tags) ? r.tags : TAG_PRESETS, loaded: true });
       return { accent: r.accent ?? null };
     } catch {
       set({ loaded: true });
@@ -96,6 +100,20 @@ export const useSettings = create<State>((set, get) => ({
   setTaskLead: (min) => {
     set({ taskLead: min });
     apiPatch('/settings/', { task_lead_min: min }).catch(() => {});
+  },
+
+  addTag: (tag) => {
+    const name = tag.name.trim();
+    if (!name || get().tags.some((t) => t.name.toLowerCase() === name.toLowerCase())) return;
+    const tags = [...get().tags, { name, color: tag.color }];
+    set({ tags });
+    apiPatch('/settings/', { tags }).catch(() => {});
+  },
+
+  removeTag: (name) => {
+    const tags = get().tags.filter((t) => t.name !== name);
+    set({ tags });
+    apiPatch('/settings/', { tags }).catch(() => {});
   },
 
   pushAccent: (hex) => {

@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 
 import { SwipeSheet } from './SwipeSheet';
+import { TagPicker } from './TagPicker';
 import { useAccent, withAlpha } from '../theme/AccentContext';
 import { colors, fonts } from '../theme/colors';
-import { TAG_COLORS, TAG_PRESETS } from '../theme/tags';
+import { NO_TAG_COLOR } from '../theme/tags';
 
 export type Note = {
   id: string;
@@ -28,16 +29,16 @@ export function NoteSheet({ visible, initial, onClose, onSave, onDelete }: Props
   const { accent } = useAccent();
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
-  const [tag, setTag] = useState(TAG_PRESETS[0].name);
-  const [tagColor, setTagColor] = useState(TAG_PRESETS[0].color);
+  const [tag, setTag] = useState('');
+  const [tagColor, setTagColor] = useState(NO_TAG_COLOR);
   const [pinned, setPinned] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
     setTitle(initial?.title ?? '');
     setBody(initial?.body ?? '');
-    setTag(initial?.tag ?? TAG_PRESETS[0].name);
-    setTagColor(initial?.tagColor ?? TAG_PRESETS[0].color);
+    setTag(initial?.tag ?? '');
+    setTagColor(initial?.tagColor ?? NO_TAG_COLOR);
     setPinned(initial?.pinned ?? false);
   }, [visible, initial]);
 
@@ -69,30 +70,14 @@ export function NoteSheet({ visible, initial, onClose, onSave, onDelete }: Props
             <TextInput value={body} onChangeText={setBody} placeholder="Write your note… (markdown ok)" placeholderTextColor={colors.textFaint} multiline style={[input, { marginTop: 12, minHeight: 120, textAlignVertical: 'top' }]} />
 
             <Text style={{ fontSize: 12, color: colors.textFainter, fontFamily: fonts.uiSemi, textTransform: 'uppercase', letterSpacing: 1, marginTop: 18, marginBottom: 9 }}>Tag</Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-              {TAG_PRESETS.map((p) => {
-                const on = tag === p.name;
-                return (
-                  <Pressable key={p.name} onPress={() => { setTag(p.name); setTagColor(p.color); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 13, paddingVertical: 9, borderRadius: 11, backgroundColor: on ? withAlpha(p.color, 16) : colors.card, borderWidth: 1, borderColor: on ? p.color : colors.border }}>
-                    <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: p.color }} />
-                    <Text style={{ color: on ? p.color : colors.textSoft, fontFamily: fonts.uiSemi, fontSize: 13 }}>{p.name}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-            <Text style={{ fontSize: 12, color: colors.textFainter, fontFamily: fonts.uiSemi, textTransform: 'uppercase', letterSpacing: 1, marginTop: 16, marginBottom: 9 }}>Custom tag name</Text>
-            <TextInput
-              value={TAG_PRESETS.some((p) => p.name === tag) ? '' : tag}
-              onChangeText={setTag}
-              placeholder="Type your own…"
-              placeholderTextColor={colors.textFaint}
-              style={input}
+            <TagPicker
+              tag={tag}
+              accent={accent}
+              onChange={(t, c) => {
+                setTag(t);
+                setTagColor(c);
+              }}
             />
-            <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
-              {TAG_COLORS.map((c) => (
-                <Pressable key={c} onPress={() => setTagColor(c)} style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: c, borderWidth: tagColor === c ? 2 : 0, borderColor: '#fff' }} />
-              ))}
-            </View>
 
             <Pressable onPress={save} style={{ backgroundColor: accent, borderRadius: 14, paddingVertical: 15, alignItems: 'center', marginTop: 20 }}>
               <Text style={{ color: '#fff', fontFamily: fonts.uiBold, fontSize: 15 }}>{initial ? 'Save note' : 'Add note'}</Text>

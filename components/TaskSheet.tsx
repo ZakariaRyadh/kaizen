@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 
-import { Check } from './SubtaskList';
+import { Check, doneLast } from './SubtaskList';
+import { TagPicker } from './TagPicker';
 import { TimePicker } from './TimePicker';
 import { ALL_DAY, fmtRange, span } from '../lib/time';
 import { useTasks } from '../store/tasks';
 import { SwipeSheet } from './SwipeSheet';
 import { useAccent, withAlpha } from '../theme/AccentContext';
 import { colors, fonts } from '../theme/colors';
-import { REPEATS, RepeatKey, Subtask, TAG_COLORS, TAG_PRESETS, Task } from '../theme/tags';
+import { NO_TAG_COLOR, REPEATS, RepeatKey, Subtask, Task } from '../theme/tags';
 
 type Props = {
   visible: boolean;
@@ -24,8 +25,8 @@ export function TaskSheet({ visible, initial, defaultDate, onClose, onSave, onDe
   const [title, setTitle] = useState('');
   const [time, setTime] = useState(ALL_DAY);
   const [duration, setDuration] = useState(0);
-  const [tag, setTag] = useState(TAG_PRESETS[0].name);
-  const [tagColor, setTagColor] = useState(TAG_PRESETS[0].color);
+  const [tag, setTag] = useState('');
+  const [tagColor, setTagColor] = useState(NO_TAG_COLOR);
   const [repeat, setRepeat] = useState<RepeatKey>('');
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
   const [newSub, setNewSub] = useState('');
@@ -36,8 +37,8 @@ export function TaskSheet({ visible, initial, defaultDate, onClose, onSave, onDe
     setTitle(initial?.title ?? '');
     setTime(initial?.time ?? ALL_DAY);
     setDuration(initial?.duration ?? 0);
-    setTag(initial?.tag ?? TAG_PRESETS[0].name);
-    setTagColor(initial?.tagColor ?? TAG_PRESETS[0].color);
+    setTag(initial?.tag ?? '');
+    setTagColor(initial?.tagColor ?? NO_TAG_COLOR);
     setRepeat(initial?.repeat ?? '');
     setSubtasks(initial?.subtasks ?? []);
     setNewSub('');
@@ -105,7 +106,7 @@ export function TaskSheet({ visible, initial, defaultDate, onClose, onSave, onDe
 
             <Field label="Subtasks">
               <View style={{ gap: 8 }}>
-                {subtasks.map((st) => (
+                {doneLast(subtasks).map((st) => (
                   <View key={st.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                     <Pressable onPress={() => editSub(st.id, { done: !st.done })} hitSlop={6}>
                       <Check done={st.done} accent={accent} size={20} />
@@ -114,7 +115,7 @@ export function TaskSheet({ visible, initial, defaultDate, onClose, onSave, onDe
                       value={st.title}
                       onChangeText={(v) => editSub(st.id, { title: v })}
                       placeholderTextColor={colors.textFaint}
-                      style={[input, { flex: 1, paddingVertical: 10 }]}
+                      style={[input, { flex: 1, paddingVertical: 10 }, st.done && { color: colors.textFaint, textDecorationLine: 'line-through' }]}
                     />
                     <Pressable onPress={() => removeSub(st.id)} hitSlop={6} style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: 'rgba(239,68,68,0.14)', alignItems: 'center', justifyContent: 'center' }}>
                       <Text style={{ color: colors.red, fontSize: 16, lineHeight: 18 }}>×</Text>
@@ -153,62 +154,14 @@ export function TaskSheet({ visible, initial, defaultDate, onClose, onSave, onDe
             </Field>
 
             <Field label="Tag">
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                {TAG_PRESETS.map((p) => {
-                  const on = tag === p.name;
-                  return (
-                    <Pressable
-                      key={p.name}
-                      onPress={() => {
-                        setTag(p.name);
-                        setTagColor(p.color);
-                      }}
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        gap: 7,
-                        paddingHorizontal: 13,
-                        paddingVertical: 9,
-                        borderRadius: 11,
-                        backgroundColor: on ? withAlpha(p.color, 16) : colors.card,
-                        borderWidth: 1,
-                        borderColor: on ? p.color : colors.border,
-                      }}
-                    >
-                      <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: p.color }} />
-                      <Text style={{ color: on ? p.color : colors.textSoft, fontFamily: fonts.uiSemi, fontSize: 13 }}>
-                        {p.name}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </Field>
-
-            <Field label="Custom tag name">
-              <TextInput
-                value={TAG_PRESETS.some((p) => p.name === tag) ? '' : tag}
-                onChangeText={setTag}
-                placeholder="Type your own…"
-                placeholderTextColor={colors.textFaint}
-                style={input}
+              <TagPicker
+                tag={tag}
+                accent={accent}
+                onChange={(t, c) => {
+                  setTag(t);
+                  setTagColor(c);
+                }}
               />
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
-                {TAG_COLORS.map((c) => (
-                  <Pressable
-                    key={c}
-                    onPress={() => setTagColor(c)}
-                    style={{
-                      width: 28,
-                      height: 28,
-                      borderRadius: 14,
-                      backgroundColor: c,
-                      borderWidth: tagColor === c ? 2 : 0,
-                      borderColor: '#fff',
-                    }}
-                  />
-                ))}
-              </View>
             </Field>
 
             <Field label="Repeat">

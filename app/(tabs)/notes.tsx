@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -20,7 +20,10 @@ export default function Notes() {
 
   const { refreshing, onRefresh } = useRefresh([useNotes.getState().load]);
 
-  const tags = useMemo(() => ['All', ...Array.from(new Set(notes.map((n) => n.tag)))], [notes]);
+  const tags = useMemo(() => ['All', ...Array.from(new Set(notes.map((n) => n.tag).filter(Boolean)))], [notes]);
+  useEffect(() => {
+    if (!tags.includes(filter)) setFilter('All');
+  }, [tags, filter]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -119,6 +122,7 @@ export default function Notes() {
 }
 
 function Tag({ note }: { note: Note }) {
+  if (!note.tag) return null;
   return (
     <Text style={{ fontSize: 10, fontFamily: fonts.uiSemi, color: note.tagColor, backgroundColor: withAlpha(note.tagColor, 14), paddingHorizontal: 8, paddingVertical: 3, borderRadius: 7, alignSelf: 'flex-start', overflow: 'hidden' }}>
       {note.tag}

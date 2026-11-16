@@ -9,7 +9,7 @@ export function SubtaskList({ items, accent, onToggle }: { items: Subtask[]; acc
   if (!items.length) return null;
   return (
     <View style={{ gap: 7, marginTop: 10, paddingLeft: 33 }}>
-      {items.map((st) => (
+      {doneLast(items).map((st) => (
         <Pressable key={st.id} onPress={() => onToggle(st.id)} hitSlop={4} style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
           <Check done={st.done} accent={accent} size={17} />
           <Text
@@ -28,6 +28,9 @@ export function SubtaskList({ items, accent, onToggle }: { items: Subtask[]; acc
     </View>
   );
 }
+
+// open ones first, ticked ones sink to the bottom (order otherwise kept)
+export const doneLast = (items: Subtask[]) => [...items.filter((s) => !s.done), ...items.filter((s) => s.done)];
 
 // "2/3" progress label for a task's subtasks (empty when it has none)
 export const subtaskProgress = (items: Subtask[]) =>

@@ -38,7 +38,6 @@ const LOGGED_KEY = 'reminders:logged';
 
 const WORKOUT_AT = { h: 17, m: 0 };
 const LEARNING_AT = { h: 19, m: 30 };
-const WEEKLY_AT = { h: 18, m: 0, weekday: 0 }; // Sunday
 
 const at = (iso: string, h: number, m: number) => {
   const [y, mo, d] = iso.split('-').map(Number);
@@ -86,10 +85,6 @@ function plan(): Reminder[] {
     if (on('learning') && !(i === 0 && studiedToday)) {
       const when = at(d, LEARNING_AT.h, LEARNING_AT.m);
       if (when > now) out.push({ id: `learning-${d}`, title: 'Learn something', body: 'Start a study session or pick a saved idea.', kind: 'learning', at: when });
-    }
-    if (on('weekly') && new Date(at(d, 12, 0)).getDay() === WEEKLY_AT.weekday) {
-      const when = at(d, WEEKLY_AT.h, WEEKLY_AT.m);
-      if (when > now) out.push({ id: `weekly-${d}`, title: 'Weekly recap', body: 'Tap to look back at your week and plan the next one.', kind: 'weekly', at: when });
     }
   }
 

@@ -14,7 +14,7 @@ export type NotifKind = 'task' | 'workout' | 'rest' | 'learning' | 'weekly' | 's
 
 // Android channels: users can tune each one in system settings.
 //   tasks   → pops up with sound (it's a deadline)
-//   nudges  → workout / learning / weekly, normal priority
+//   nudges  → workout / learning, normal priority
 //   rest-*  → gym rest timer (see below)
 export const CHANNEL: Record<NotifKind, string> = {
   task: 'tasks',
@@ -46,7 +46,7 @@ async function setup() {
   });
   await Notifications.setNotificationChannelAsync('nudges', {
     name: 'Daily nudges',
-    description: 'Workout, learning and weekly recap reminders',
+    description: 'Workout and learning reminders',
     importance: Notifications.AndroidImportance.DEFAULT,
     lockscreenVisibility: PUBLIC,
   });
