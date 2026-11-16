@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 
+import { toast } from '../components/Dialog';
 import { apiDelete, apiGet, apiPatch, apiPost } from '../services/api';
 import { todayIso } from './today';
 
@@ -29,7 +30,7 @@ const sessionFromApi = (r: any): LearnSession => ({
   done: r.done,
 });
 
-const sessionToApi = (s: Partial<LearnSession>) => ({
+const sessionToApi = (s: Omit<LearnSession, 'id'>) => ({
   subject: s.subjectId ?? null,
   subject_name: s.subjectName ?? '',
   date: s.date ?? todayIso(),
@@ -38,6 +39,19 @@ const sessionToApi = (s: Partial<LearnSession>) => ({
   summary: s.summary ?? '',
   done: s.done ?? false,
 });
+
+// PATCH body with only the fields being changed (never blanks the others)
+const patchToApi = (p: Partial<LearnSession>) => {
+  const out: Record<string, unknown> = {};
+  if (p.subjectId !== undefined) out.subject = p.subjectId;
+  if (p.subjectName !== undefined) out.subject_name = p.subjectName;
+  if (p.date !== undefined) out.date = p.date;
+  if (p.durationSec !== undefined) out.duration_sec = p.durationSec;
+  if (p.goal !== undefined) out.goal = p.goal;
+  if (p.summary !== undefined) out.summary = p.summary;
+  if (p.done !== undefined) out.done = p.done;
+  return out;
+};
 
 type State = {
   subjects: Subject[];
@@ -89,13 +103,16 @@ export const useLearning = create<State>((set, get) => ({
     try {
       const saved = sessionFromApi(await apiPost('/learning-sessions/', sessionToApi(s)));
       set((st) => ({ sessions: st.sessions.map((x) => (x.id === temp.id ? saved : x)) }));
-    } catch {}
+    } catch {
+      set((st) => ({ sessions: st.sessions.filter((x) => x.id !== temp.id) }));
+      toast("Couldn't save — check your connection", 'error');
+    }
   },
 
   updateSession: async (id, patch) => {
     set((st) => ({ sessions: st.sessions.map((x) => (x.id === id ? { ...x, ...patch } : x)) }));
     try {
-      const saved = sessionFromApi(await apiPatch(`/learning-sessions/${id}/`, sessionToApi(patch)));
+      const saved = sessionFromApi(await apiPatch(`/learning-sessions/${id}/`, patchToApi(patch)));
       set((st) => ({ sessions: st.sessions.map((x) => (x.id === id ? saved : x)) }));
     } catch {}
   },

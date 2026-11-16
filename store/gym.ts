@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 
+import { toast } from '../components/Dialog';
 import { apiDelete, apiGet, apiPatch, apiPost } from '../services/api';
 import { LoggedSession, Program, PROGRAMS, SetLog } from '../theme/programs';
 import { todayIso } from './today';
@@ -43,15 +44,16 @@ const programFromApi = (r: any): Program => ({
 });
 
 // ---- sessions ----
-const daysBetween = (iso: string) =>
-  Math.max(0, Math.round((new Date(todayIso()).getTime() - new Date(iso).getTime()) / 86400000));
-const fmtDate = (iso: string) =>
-  new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+// dates are local calendar days: parse at noon so no time zone shifts them
+export const localDate = (iso: string) => new Date(`${iso}T12:00:00`);
+export const daysBetween = (iso: string) =>
+  Math.max(0, Math.round((localDate(todayIso()).getTime() - localDate(iso).getTime()) / 86400000));
+const fmtDate = (iso: string) => localDate(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
 const sessionToApi = (s: LoggedSession) => ({
   program_name: s.program,
   day_label: s.day,
-  date: todayIso(),
+  date: s.iso ?? todayIso(),
   duration_sec: s.durationSec,
   volume: s.volume,
   cardio: s.cardio,
@@ -65,13 +67,15 @@ const sessionFromApi = (r: any): LoggedSession => ({
   volume: r.volume,
   cardio: r.cardio,
   cardioMin: r.cardio_min,
-  date: daysBetween(r.date) === 0 ? 'Today' : fmtDate(r.date),
+  date: daysBetween(r.date) === 0 ? 'Today' : daysBetween(r.date) === 1 ? 'Yesterday' : fmtDate(r.date),
   daysAgo: daysBetween(r.date),
+  iso: r.date,
 });
 
 // ---- logged sets ----
 const setLogFromApi = (r: any): SetLog => ({
   id: String(r.id),
+  session: r.session != null ? String(r.session) : null,
   exercise: r.exercise,
   order: r.order,
   reps: r.reps,
@@ -98,6 +102,7 @@ type State = {
   saveWorkout: (s: LoggedSession, sets: { exercise: string; reps: number; weight: number }[]) => Promise<void>;
   bestWeight: (exercise: string) => number;          // all-time best kg
   lastSets: (exercise: string) => SetLog[];          // most recent session's sets
+  sessionSets: (sessionId: string) => SetLog[];      // all sets of one workout
 };
 
 export const useGym = create<State>((set, get) => ({
@@ -157,19 +162,25 @@ export const useGym = create<State>((set, get) => ({
   lastSets: (exercise) => {
     const rows = get().setlogs.filter((s) => s.exercise === exercise);
     if (rows.length === 0) return [];
-    const lastDate = rows.reduce((d, s) => (s.date > d ? s.date : d), rows[0].date);
-    return rows.filter((s) => s.date === lastDate).sort((a, b) => a.order - b.order);
+    // newest workout = latest date, then highest id (two workouts on one day stay apart)
+    const newest = rows.reduce((a, b) => (b.date > a.date || (b.date === a.date && Number(b.id) > Number(a.id)) ? b : a));
+    const same = (s: SetLog) => (newest.session ? s.session === newest.session : s.date === newest.date);
+    return rows.filter(same).sort((a, b) => a.order - b.order);
   },
 
+  sessionSets: (sessionId) => get().setlogs.filter((s) => s.session === sessionId).sort((a, b) => a.order - b.order),
+
   saveWorkout: async (s, sets) => {
-    // PR detection: a set is a PR if its weight beats the all-time best for that exercise
+    // PR: beats the all-time best for an exercise you've done before
+    // (the first time you do an exercise is a baseline, not a record)
     const bestBefore: Record<string, number> = {};
     for (const sl of get().setlogs) {
       bestBefore[sl.exercise] = Math.max(bestBefore[sl.exercise] ?? 0, sl.weight);
     }
     const marked = sets.map((x, i) => {
-      const pr = x.weight > (bestBefore[x.exercise] ?? 0);
-      if (pr) bestBefore[x.exercise] = x.weight; // only the first to hit it counts
+      const prev = bestBefore[x.exercise];
+      const pr = prev !== undefined && prev > 0 && x.weight > prev;
+      if (prev === undefined || x.weight > prev) bestBefore[x.exercise] = x.weight; // only the first to hit it counts
       return { ...x, order: i, isPr: pr };
     });
 
@@ -178,26 +189,31 @@ export const useGym = create<State>((set, get) => ({
     try {
       const savedSession = sessionFromApi(await apiPost('/sessions/', sessionToApi(s)));
       set((st) => ({ sessions: st.sessions.map((x) => (x.id === s.id ? savedSession : x)) }));
-      // persist each set linked to the saved session
-      const saved: SetLog[] = [];
-      for (const m of marked) {
-        try {
-          const row = setLogFromApi(
-            await apiPost('/setlogs/', {
-              session: Number(savedSession.id),
-              exercise: m.exercise,
-              order: m.order,
-              reps: m.reps,
-              weight: m.weight,
-              date: todayIso(),
-              is_pr: m.isPr,
-            }),
-          );
-          saved.push(row);
-        } catch {}
-      }
+      // persist every set linked to the saved session (in parallel)
+      const rows = await Promise.all(
+        marked.map((m) =>
+          apiPost('/setlogs/', {
+            session: Number(savedSession.id),
+            exercise: m.exercise,
+            order: m.order,
+            reps: m.reps,
+            weight: m.weight,
+            date: s.iso ?? todayIso(),
+            is_pr: m.isPr,
+          })
+            .then(setLogFromApi)
+            .catch(() => null),
+        ),
+      );
+      const saved = rows.filter((r): r is SetLog => !!r);
       set((st) => ({ setlogs: [...saved, ...st.setlogs] }));
-    } catch {}
+      const prs = marked.filter((m) => m.isPr).length;
+      toast(prs ? `Workout saved · ${prs} new PR${prs > 1 ? 's' : ''} 🏆` : 'Workout saved');
+      if (saved.length < marked.length) toast(`${marked.length - saved.length} set(s) didn't save — check your connection`, 'error');
+    } catch {
+      set((st) => ({ sessions: st.sessions.filter((x) => x.id !== s.id) }));
+      toast("Couldn't save the workout — check your connection", 'error');
+    }
   },
 
   addSession: async (s) => {
@@ -205,11 +221,16 @@ export const useGym = create<State>((set, get) => ({
     try {
       const saved = sessionFromApi(await apiPost('/sessions/', sessionToApi(s)));
       set((st) => ({ sessions: st.sessions.map((x) => (x.id === s.id ? saved : x)) }));
-    } catch {}
+      toast('Workout saved');
+    } catch {
+      set((st) => ({ sessions: st.sessions.filter((x) => x.id !== s.id) }));
+      toast("Couldn't save the workout — check your connection", 'error');
+    }
   },
 
   deleteSession: async (id) => {
-    set((st) => ({ sessions: st.sessions.filter((x) => x.id !== id) }));
+    // its sets go too (the server deletes them with the session)
+    set((st) => ({ sessions: st.sessions.filter((x) => x.id !== id), setlogs: st.setlogs.filter((x) => x.session !== id) }));
     await apiDelete(`/sessions/${id}/`).catch(() => {});
   },
 }));

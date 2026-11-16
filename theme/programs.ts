@@ -23,6 +23,7 @@ export type Program = {
 // one actual logged set (what you really lifted)
 export type SetLog = {
   id: string;
+  session: string | null; // workout it belongs to
   exercise: string;
   order: number;
   reps: number;
@@ -142,6 +143,7 @@ export type LoggedSession = {
   cardioMin: number;
   date: string; // display label e.g. "Jun 14"
   daysAgo: number;
+  iso?: string; // 'YYYY-MM-DD'
 };
 
 export const SEED_LOG: LoggedSession[] = [

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-import { apiDelete, apiGet, apiPost } from '../services/api';
+import { apiDelete, apiGet, apiPatch, apiPost } from '../services/api';
 
 export type Weight = { id: string; date: string; kg: number };
 
@@ -24,6 +24,13 @@ export const useWeight = create<State>((set, get) => ({
   },
 
   add: async (date, kg) => {
+    // one entry per day: logging again the same day corrects it
+    const same = get().weights.find((w) => w.date === date && !w.id.startsWith('tmp-'));
+    if (same) {
+      set((s) => ({ weights: s.weights.map((w) => (w.id === same.id ? { ...w, kg } : w)) }));
+      await apiPatch(`/weights/${same.id}/`, { kg }).catch(() => {});
+      return;
+    }
     const temp: Weight = { id: `tmp-${Date.now()}`, date, kg };
     set((s) => ({ weights: [temp, ...s.weights].sort((a, b) => b.date.localeCompare(a.date)) }));
     try {

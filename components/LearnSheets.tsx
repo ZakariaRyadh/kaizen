@@ -1,12 +1,20 @@
 import { useEffect, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 
+import { confirm } from './Dialog';
 import { SwipeSheet } from './SwipeSheet';
+import { todayIso } from '../store/today';
 import type { LearnSession, Subject } from '../store/learning';
 import { accentSwatches, colors, fonts } from '../theme/colors';
 import { useAccent, withAlpha } from '../theme/AccentContext';
 
-const fmtDay = (iso: string) => new Date(iso).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+// date-only strings are local days (parse at noon so no time zone shifts them)
+const fmtDay = (iso: string) => new Date(iso.length === 10 ? `${iso}T12:00:00` : iso).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+const isoDaysAgo = (n: number) => {
+  const d = new Date(`${todayIso()}T12:00:00`);
+  d.setDate(d.getDate() - n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 const hrs = (s: number) => (s / 3600 >= 1 ? `${(s / 3600).toFixed(1)}h` : `${Math.round(s / 60)}m`);
 
 // ---- create a new subject ----
@@ -132,11 +140,13 @@ export function SummarySheet({
   durationLabel,
   onClose,
   onSave,
+  onDiscard,
 }: {
   visible: boolean;
   durationLabel: string;
   onClose: () => void;
   onSave: (summary: string) => void;
+  onDiscard?: () => void;
 }) {
   const { accent } = useAccent();
   const [summary, setSummary] = useState('');
@@ -175,8 +185,20 @@ export function SummarySheet({
         <Text style={{ color: '#fff', fontFamily: fonts.uiBold, fontSize: 15 }}>Save session</Text>
       </Pressable>
       <Pressable onPress={() => { onSave(''); onClose(); }} style={{ alignItems: 'center', paddingVertical: 14 }}>
-        <Text style={{ color: colors.textMuted, fontFamily: fonts.uiSemi, fontSize: 14 }}>Skip</Text>
+        <Text style={{ color: colors.textMuted, fontFamily: fonts.uiSemi, fontSize: 14 }}>Save without summary</Text>
       </Pressable>
+      {onDiscard && (
+        <Pressable
+          onPress={() =>
+            confirm({ title: 'Discard this session?', message: "The time isn't saved.", confirmText: 'Discard', destructive: true }).then((ok) => {
+              if (ok) onDiscard();
+            })
+          }
+          style={{ alignItems: 'center', paddingBottom: 6 }}
+        >
+          <Text style={{ color: withAlpha(colors.red, 80), fontFamily: fonts.uiSemi, fontSize: 13 }}>Discard session</Text>
+        </Pressable>
+      )}
     </SwipeSheet>
   );
 }
@@ -202,14 +224,18 @@ export function EditSessionSheet({
   const [goal, setGoal] = useState('');
   const [summary, setSummary] = useState('');
   const [minutes, setMinutes] = useState('');
+  const [date, setDate] = useState(todayIso());
+  const isNew = session?.id === 'new';
 
   useEffect(() => {
     if (visible && session) {
-      setSubjectId(session.subjectId);
+      setSubjectId(session.subjectId ?? subjects[0]?.id ?? null);
       setGoal(session.goal);
       setSummary(session.summary);
-      setMinutes(String(Math.round(session.durationSec / 60)));
+      setMinutes(session.durationSec ? String(Math.round(session.durationSec / 60)) : '');
+      setDate(session.date);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, session]);
 
   if (!session) return null;
@@ -221,16 +247,18 @@ export function EditSessionSheet({
       subjectName: subj?.name ?? session.subjectName,
       goal: goal.trim(),
       summary: summary.trim(),
-      durationSec: (parseInt(minutes, 10) || 0) * 60,
-      date: session.date,
+      durationSec: Math.min(24 * 60, parseInt(minutes, 10) || 0) * 60,
+      date,
       done: true,
     });
     onClose();
   };
+  const canSave = (parseInt(minutes, 10) || 0) > 0;
+  const days = Array.from({ length: 7 }, (_, i) => isoDaysAgo(i));
 
   return (
     <SwipeSheet visible={visible} onClose={onClose} scroll>
-      <Text style={{ fontSize: 19, color: colors.text, fontFamily: fonts.uiBold, marginBottom: 16 }}>Edit session</Text>
+      <Text style={{ fontSize: 19, color: colors.text, fontFamily: fonts.uiBold, marginBottom: 16 }}>{isNew ? 'Log a session' : 'Edit session'}</Text>
 
       <Text style={{ fontSize: 12, color: colors.textFainter, fontFamily: fonts.uiSemi, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 9 }}>Subject</Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
@@ -245,8 +273,31 @@ export function EditSessionSheet({
         })}
       </View>
 
+      <Text style={{ fontSize: 12, color: colors.textFainter, fontFamily: fonts.uiSemi, textTransform: 'uppercase', letterSpacing: 1, marginTop: 16, marginBottom: 9 }}>Day</Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7 }}>
+        {(days.includes(date) ? days : [date, ...days]).map((d) => {
+          const on = d === date;
+          const label = d === days[0] ? 'Today' : d === days[1] ? 'Yesterday' : new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' });
+          return (
+            <Pressable key={d} onPress={() => setDate(d)} style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: on ? withAlpha(accent, 18) : colors.card, borderWidth: 1, borderColor: on ? accent : colors.border }}>
+              <Text style={{ color: on ? accent : colors.textSoft, fontFamily: fonts.uiSemi, fontSize: 12.5 }}>{label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
       <Text style={{ fontSize: 12, color: colors.textFainter, fontFamily: fonts.uiSemi, textTransform: 'uppercase', letterSpacing: 1, marginTop: 16, marginBottom: 9 }}>Minutes</Text>
-      <TextInput value={minutes} onChangeText={setMinutes} keyboardType="number-pad" placeholder="0" placeholderTextColor={colors.textFaint} style={inp} />
+      <View style={{ flexDirection: 'row', gap: 7, marginBottom: 8 }}>
+        {[15, 30, 45, 60, 90].map((m) => {
+          const on = minutes === String(m);
+          return (
+            <Pressable key={m} onPress={() => setMinutes(String(m))} style={{ flex: 1, paddingVertical: 8, borderRadius: 10, alignItems: 'center', backgroundColor: on ? withAlpha(accent, 18) : colors.card, borderWidth: 1, borderColor: on ? accent : colors.border }}>
+              <Text style={{ color: on ? accent : colors.textSoft, fontFamily: fonts.monoSemi, fontSize: 12.5 }}>{m}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      <TextInput value={minutes} onChangeText={(t) => setMinutes(t.replace(/\D/g, ''))} keyboardType="number-pad" placeholder="Minutes" placeholderTextColor={colors.textFaint} style={inp} />
 
       <Text style={{ fontSize: 12, color: colors.textFainter, fontFamily: fonts.uiSemi, textTransform: 'uppercase', letterSpacing: 1, marginTop: 16, marginBottom: 9 }}>Goal</Text>
       <TextInput value={goal} onChangeText={setGoal} placeholder="What you wanted to learn" placeholderTextColor={colors.textFaint} style={inp} />
@@ -254,12 +305,23 @@ export function EditSessionSheet({
       <Text style={{ fontSize: 12, color: colors.textFainter, fontFamily: fonts.uiSemi, textTransform: 'uppercase', letterSpacing: 1, marginTop: 16, marginBottom: 9 }}>Summary</Text>
       <TextInput value={summary} onChangeText={setSummary} multiline placeholder="What you learned" placeholderTextColor={colors.textFaint} style={[inp, { minHeight: 90, textAlignVertical: 'top' }]} />
 
-      <Pressable onPress={save} style={{ backgroundColor: accent, borderRadius: 14, paddingVertical: 15, alignItems: 'center', marginTop: 18 }}>
-        <Text style={{ color: '#fff', fontFamily: fonts.uiBold, fontSize: 15 }}>Save changes</Text>
+      <Pressable onPress={save} disabled={!canSave} style={{ backgroundColor: accent, borderRadius: 14, paddingVertical: 15, alignItems: 'center', marginTop: 18, opacity: canSave ? 1 : 0.5 }}>
+        <Text style={{ color: '#fff', fontFamily: fonts.uiBold, fontSize: 15 }}>{isNew ? 'Add to log' : 'Save changes'}</Text>
       </Pressable>
-      <Pressable onPress={() => { onDelete(); onClose(); }} style={{ paddingVertical: 14, alignItems: 'center', marginTop: 2 }}>
-        <Text style={{ color: colors.red, fontFamily: fonts.uiSemi, fontSize: 14 }}>Delete session</Text>
-      </Pressable>
+      {!isNew && (
+        <Pressable
+          onPress={() =>
+            confirm({ title: 'Delete this session?', message: `${session.subjectName || 'General'} · ${fmtDay(session.date)}`, confirmText: 'Delete', destructive: true }).then((ok) => {
+              if (!ok) return;
+              onDelete();
+              onClose();
+            })
+          }
+          style={{ paddingVertical: 14, alignItems: 'center', marginTop: 2 }}
+        >
+          <Text style={{ color: colors.red, fontFamily: fonts.uiSemi, fontSize: 14 }}>Delete session</Text>
+        </Pressable>
+      )}
     </SwipeSheet>
   );
 }
@@ -287,7 +349,16 @@ export function SubjectDetailSheet({
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 }}>
         <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: subject.color }} />
         <Text style={{ fontSize: 19, color: colors.text, fontFamily: fonts.uiBold, flex: 1 }}>{subject.name}</Text>
-        <Pressable onPress={() => { onDelete(); onClose(); }} hitSlop={8}>
+        <Pressable
+          onPress={() =>
+            confirm({ title: `Delete "${subject.name}"?`, message: 'Its past sessions stay in your log.', confirmText: 'Delete', destructive: true }).then((ok) => {
+              if (!ok) return;
+              onDelete();
+              onClose();
+            })
+          }
+          hitSlop={8}
+        >
           <Text style={{ color: colors.red, fontFamily: fonts.uiSemi, fontSize: 13 }}>Delete</Text>
         </Pressable>
       </View>
@@ -353,7 +424,7 @@ export function NewSubjectsSheet({
               <Text style={{ flex: 1, color: colors.text, fontFamily: fonts.uiSemi, fontSize: 14 }}>{s.name}</Text>
               <Text style={{ color: colors.textMuted, fontFamily: fonts.monoSemi, fontSize: 12 }}>{fmtDay(s.createdAt)}</Text>
               {cur && (
-                <View style={{ backgroundColor: withAlpha(colors.green, 0.15), borderRadius: 7, paddingHorizontal: 7, paddingVertical: 3 }}>
+                <View style={{ backgroundColor: withAlpha(colors.green, 15), borderRadius: 7, paddingHorizontal: 7, paddingVertical: 3 }}>
                   <Text style={{ color: colors.green, fontFamily: fonts.uiBold, fontSize: 10.5 }}>NEW</Text>
                 </View>
               )}

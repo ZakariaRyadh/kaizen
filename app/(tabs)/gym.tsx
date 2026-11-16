@@ -1,42 +1,30 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { confirm } from '../../components/Dialog';
+import { confirm, toast } from '../../components/Dialog';
 import { Icon } from '../../components/Icon';
 import { ProgramEditor } from '../../components/ProgramEditor';
-import { ProgressStat } from '../../components/ProgressStat';
+import { GymLog } from '../../components/GymLog';
 import { Ring } from '../../components/Ring';
 import { SwipeSheet } from '../../components/SwipeSheet';
-import { WeightSheet } from '../../components/WeightSheet';
 import { useRefresh } from '../../hooks/useRefresh';
 import { clearRestAlerts, startRestAlerts } from '../../services/notifications';
 import { LiveSet, useGym } from '../../store/gym';
 import { useNotifications } from '../../store/notifications';
 import { useSettings } from '../../store/settings';
+import { loadLive, saveLive } from '../../lib/liveSession';
 import { useToday } from '../../store/today';
 import { useWeight } from '../../store/weight';
 import { useAccent, withAlpha } from '../../theme/AccentContext';
 import { colors, fonts } from '../../theme/colors';
 import { Exercise, LoggedSession, Program } from '../../theme/programs';
 
-const fmtDay = (iso: string) => new Date(iso).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-
 const pad = (n: number) => String(n).padStart(2, '0');
 const clock = (s: number) => `${pad(Math.floor(s / 3600))}:${pad(Math.floor((s % 3600) / 60))}:${pad(s % 60)}`;
 const restFmt = (s: number) => `${Math.floor(s / 60)}:${pad(s % 60)}`;
-
-// rough training volume from a day's exercises (sets × reps × weight)
-function dayVolume(exercises: { sets: number; reps: string; weight: string }[]) {
-  return exercises.reduce((sum, e) => {
-    const reps = parseInt(e.reps, 10) || 0;
-    const w = parseFloat(e.weight) || 0;
-    return sum + e.sets * reps * w;
-  }, 0);
-}
-
 
 export default function Gym() {
   const { accent } = useAccent();
@@ -96,14 +84,7 @@ export default function Gym() {
 
   const [programModal, setProgramModal] = useState(false);
 
-  // body weight log
-  const weights = useWeight((s) => s.weights);
-  const weightApi = useWeight();
-  const [weightSheet, setWeightSheet] = useState(false);
-
   const { refreshing, onRefresh } = useRefresh([useGym.getState().load, useWeight.getState().load]);
-
-  const log = useGym((s) => s.sessions);
 
   // default to the active program once data loads
   useEffect(() => {
@@ -221,6 +202,16 @@ export default function Gym() {
       [exIndex]: (m[exIndex] ?? []).map((s, k) => (k === i ? { ...s, [field]: val } : s)),
     }));
 
+  // extra set (copies the last one) / remove a set, mid-session
+  const addSet = (exIndex: number) =>
+    setLiveSets((m) => {
+      const rows = m[exIndex] ?? [];
+      const last = rows[rows.length - 1] ?? { reps: 0, weight: 0, done: false };
+      return { ...m, [exIndex]: [...rows, { reps: last.reps, weight: last.weight, done: false }] };
+    });
+  const removeSet = (exIndex: number, i: number) =>
+    setLiveSets((m) => ({ ...m, [exIndex]: (m[exIndex] ?? []).filter((_, k) => k !== i) }));
+
   // rename an exercise live, mid-session — purely local until the session is saved
   const renameExercise = (exIndex: number, name: string) =>
     setLiveExercises((arr) => arr.map((e, k) => (k === exIndex ? { ...e, name } : e)));
@@ -270,19 +261,20 @@ export default function Gym() {
     liveExercises.forEach((ex, i) => {
       for (const s of liveSets[i] ?? []) if (s.done) doneSets.push({ exercise: ex.name, reps: s.reps, weight: s.weight });
     });
-    // real volume from what was lifted; fall back to plan estimate if nothing checked
+    // volume from what was actually lifted
     const realVolume = doneSets.reduce((v, s) => v + s.reps * s.weight, 0);
 
     const entry: LoggedSession = {
       id: Date.now().toString(),
       day: day.label,
-      program: program.name.split(' ').map((w) => w[0]).join(''),
-      durationSec: elapsed,
-      volume: realVolume || (day?.isCardio ? 0 : dayVolume(day.exercises)),
+      program: program.name,
+      durationSec: elapsed + totalCardio, // whole visit: lifting + cardio
+      volume: Math.round(realVolume), // only what was actually ticked
       cardio: totalCardio > 0,
       cardioMin: totalCardio > 0 ? Math.max(1, Math.ceil(totalCardio / 60)) : 0,
       date: 'Today',
       daysAgo: 0,
+      iso: TODAY,
     };
 
     if (doneSets.length > 0) gym.saveWorkout(entry, doneSets);
@@ -313,6 +305,17 @@ export default function Gym() {
     setView('log');
   };
 
+  // throw away the workout in progress (nothing is saved)
+  const discardWorkout = async () => {
+    const ok = await confirm({ title: 'Discard this workout?', message: 'The timer and the sets you ticked are thrown away. Nothing is saved.', confirmText: 'Discard', destructive: true });
+    if (!ok) return;
+    resetSession();
+    setLiveSets({});
+    setLiveExercises([]);
+    setPhase('idle');
+    toast('Workout discarded', 'info');
+  };
+
   const pickProgram = (id: string) => {
     setActiveId(id);
     setDayIndex(0);
@@ -336,9 +339,12 @@ export default function Gym() {
     setActiveId(p.id);
     setDayIndex(0);
   };
-  const deleteProgram = (id: string) => {
+  const deleteProgram = async (id: string) => {
     if (programs.length <= 1) return; // keep at least one
-    const next = programs.filter((p) => p.id !== id);
+    const p = programs.find((x) => x.id === id);
+    const ok = await confirm({ title: `Delete "${p?.name ?? 'program'}"?`, message: 'Its days and exercises are removed. Your logged workouts stay.', confirmText: 'Delete', destructive: true });
+    if (!ok) return;
+    const next = programs.filter((x) => x.id !== id);
     gym.deleteProgram(id);
     if (id === activeId) {
       setActiveId(next[0].id);
@@ -347,65 +353,57 @@ export default function Gym() {
   };
 
 
-  // ---- log stats ----
-  const stats = useMemo(() => {
-    const n = log.length;
-    const avg = n ? Math.round(log.reduce((s, x) => s + x.durationSec, 0) / n / 60) : 0;
-    const week = log.filter((x) => x.daysAgo <= 7).length;
-    const cardioMin = log.reduce((s, x) => s + x.cardioMin, 0);
-    return { n, avg, week, cardioMin };
-  }, [log]);
-
-  // this-period vs previous-period comparison (window = Settings → progress days)
-  const progressDays = useSettings((s) => s.progressDays);
-  const progress = useMemo(() => {
-    const win = (lo: number, hi: number) => {
-      const rows = log.filter((x) => x.daysAgo >= lo && x.daysAgo < hi);
-      return {
-        sessions: rows.length,
-        minutes: Math.round(rows.reduce((s, x) => s + x.durationSec, 0) / 60),
-        cardio: rows.reduce((s, x) => s + x.cardioMin, 0),
-      };
-    };
-    return { cur: win(0, progressDays), prev: win(progressDays, progressDays * 2) };
-  }, [log, progressDays]);
-
-  const daysAgoOf = (iso: string) => Math.max(0, Math.round((new Date(TODAY).getTime() - new Date(iso).getTime()) / 86400000));
-
-  // per-exercise: best weight lifted this period vs the period before — "+1" per exercise that went up
-  const setlogs = gym.setlogs;
-  const exerciseProgress = useMemo(() => {
-    const names = Array.from(new Set(setlogs.map((s) => s.exercise)));
-    const bestIn = (name: string, lo: number, hi: number) =>
-      setlogs
-        .filter((s) => s.exercise === name && daysAgoOf(s.date) >= lo && daysAgoOf(s.date) < hi)
-        .reduce((m, s) => Math.max(m, s.weight), 0);
-    const rows = names
-      .map((name) => ({ name, cur: bestIn(name, 0, progressDays), prev: bestIn(name, progressDays, progressDays * 2) }))
-      .filter((r) => r.cur > 0 || r.prev > 0)
-      .sort((a, b) => a.name.localeCompare(b.name));
-    const tracked = rows.filter((r) => r.cur > 0 && r.prev > 0);
-    const improved = tracked.filter((r) => r.cur > r.prev).length;
-    return { rows, tracked: tracked.length, improved };
-  }, [setlogs, progressDays]);
-
-  // body weight: average kg this period vs the period before
-  const weightProgress = useMemo(() => {
-    const win = (lo: number, hi: number) => {
-      const rows = weights.filter((w) => { const a = daysAgoOf(w.date); return a >= lo && a < hi; });
-      if (!rows.length) return 0;
-      return Math.round((rows.reduce((s, w) => s + w.kg, 0) / rows.length) * 10) / 10;
-    };
-    return { cur: win(0, progressDays), prev: win(progressDays, progressDays * 2) };
-  }, [weights, progressDays]);
-
-  const [exerciseSheet, setExerciseSheet] = useState(false);
-
-  const bars = useMemo(() => {
-    const last = [...log].slice(0, 5).reverse();
-    const max = Math.max(1, ...last.map((x) => x.durationSec));
-    return last.map((x) => ({ min: Math.round(x.durationSec / 60), h: (x.durationSec / max) * 100, label: x.day.slice(0, 3) }));
-  }, [log]);
+  // ---- keep a workout in progress if the app is closed ----
+  type Snap = {
+    phase: typeof phase; programId: string; dayIndex: number;
+    sessStart: number | null; cardioStart: number | null;
+    elapsed: number; cardioSec: number; cardioTotal: number;
+    cardioRunning: boolean; paused: boolean;
+    liveSets: Record<number, LiveSet[]>; liveExercises: Exercise[]; restEnd: number | null;
+  };
+  const restored = useRef(false);
+  useEffect(() => {
+    if (restored.current || !programs.length) return;
+    restored.current = true;
+    loadLive<Snap>('gym:live').then((snap) => {
+      if (!snap || snap.phase === 'idle') return;
+      if (programs.some((p) => p.id === snap.programId)) setActiveId(snap.programId);
+      setDayIndex(snap.dayIndex);
+      sessRef.current = snap.sessStart;
+      cardioRef.current = snap.cardioStart;
+      cardioTotalRef.current = snap.cardioTotal;
+      setElapsed(snap.sessStart !== null ? Math.floor((Date.now() - snap.sessStart) / 1000) : snap.elapsed);
+      setCardioSec(snap.cardioStart !== null ? Math.floor((Date.now() - snap.cardioStart) / 1000) : snap.cardioSec);
+      setCardioTotal(snap.cardioTotal);
+      setCardioRunning(snap.cardioRunning);
+      setPaused(snap.paused);
+      setLiveSets(snap.liveSets ?? {});
+      setLiveExercises(snap.liveExercises ?? []);
+      if (snap.restEnd && snap.restEnd > Date.now()) {
+        restEnd.current = snap.restEnd;
+        setRestLeft(Math.ceil((snap.restEnd - Date.now()) / 1000));
+        setRestRunning(true);
+      }
+      setPhase(snap.phase);
+      toast('Workout in progress restored', 'info');
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [programs]);
+  useEffect(() => {
+    if (!restored.current) return; // don't overwrite a saved workout before it's restored
+    if (phase === 'idle') {
+      saveLive('gym:live', null);
+      return;
+    }
+    saveLive<Snap>('gym:live', {
+      phase, programId: activeId, dayIndex,
+      sessStart: sessRef.current, cardioStart: cardioRef.current,
+      elapsed, cardioSec, cardioTotal: cardioTotalRef.current,
+      cardioRunning, paused, liveSets, liveExercises, restEnd: restEnd.current,
+    });
+    // elapsed/cardioSec are only needed while paused, so they're not deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, liveSets, liveExercises, paused, cardioRunning, cardioTotal, activeId, dayIndex, restRunning]);
 
   // programs still loading from the backend
   if (!program || !day) {
@@ -542,10 +540,15 @@ export default function Gym() {
                   </View>
                 )
               )}
+              {phase !== 'idle' && (
+                <Pressable onPress={discardWorkout} hitSlop={8} style={{ alignSelf: 'center', marginTop: 12 }}>
+                  <Text style={{ color: colors.textFaint, fontFamily: fonts.uiSemi, fontSize: 12.5 }}>Discard workout</Text>
+                </Pressable>
+              )}
             </LinearGradient>
 
             {/* program selector */}
-            <Pressable onPress={() => setProgramModal(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 13, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 18, padding: 15 }}>
+            <Pressable onPress={() => (phase === 'idle' ? setProgramModal(true) : toast('Finish or discard the workout to switch program', 'info'))} style={{ flexDirection: 'row', alignItems: 'center', gap: 13, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 18, padding: 15 }}>
               <View style={{ width: 38, height: 38, borderRadius: 11, backgroundColor: withAlpha(accent, 14), alignItems: 'center', justifyContent: 'center' }}>
                 <Icon name="notes" size={20} color={accent} />
               </View>
@@ -561,7 +564,7 @@ export default function Gym() {
               {program.days.map((d, i) => {
                 const on = i === dayIndex;
                 return (
-                  <Pressable key={d.label} onPress={() => setDayIndex(i)} style={{ flex: 1, paddingVertical: 11, borderRadius: 10, alignItems: 'center', backgroundColor: on ? accent : 'transparent' }}>
+                  <Pressable key={`${i}-${d.label}`} onPress={() => phase === 'idle' && setDayIndex(i)} style={{ flex: 1, paddingVertical: 11, borderRadius: 10, alignItems: 'center', backgroundColor: on ? accent : 'transparent' }}>
                     <Text style={{ color: on ? '#fff' : colors.textMuted, fontFamily: fonts.uiSemi, fontSize: 13.5 }}>{d.label}</Text>
                   </Pressable>
                 );
@@ -581,7 +584,7 @@ export default function Gym() {
             {/* rest timer */}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 22, padding: 20 }}>
               <View style={{ width: 118, height: 118 }}>
-                <Ring size={118} stroke={8} progress={restLeft / restSeconds} color={accent} track="rgba(255,255,255,0.07)" />
+                <Ring size={118} stroke={8} progress={Math.min(1, restLeft / Math.max(restSeconds, restLeft || 1))} color={accent} track="rgba(255,255,255,0.07)" />
                 <View style={{ position: 'absolute', top: 0, left: 0, width: 118, height: 118, alignItems: 'center', justifyContent: 'center' }}>
                   <Text style={{ fontFamily: fonts.monoSemi, fontSize: 29, color: '#fff' }}>{restFmt(restLeft)}</Text>
                   <Text style={{ fontSize: 10, color: colors.textDim, letterSpacing: 1.2, marginTop: 1 }}>REST</Text>
@@ -655,7 +658,7 @@ export default function Gym() {
                     })()}
 
                     {phase === 'training' && liveSets[i] ? (
-                      <SetTracker sets={liveSets[i]} accent={accent} onToggle={(si) => toggleSet(i, si)} onEdit={(si, f, v) => editSet(i, si, f, v)} />
+                      <SetTracker sets={liveSets[i]} accent={accent} onToggle={(si) => toggleSet(i, si)} onEdit={(si, f, v) => editSet(i, si, f, v)} onAdd={() => addSet(i)} onRemove={(si) => removeSet(i, si)} />
                     ) : (
                       <View style={{ flexDirection: 'row', gap: 8 }}>
                         <Stat label="Sets" value={String(ex.sets)} />
@@ -672,162 +675,7 @@ export default function Gym() {
 
           </>
         ) : (
-          <>
-            {/* stat cards */}
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-              <StatCard val={String(stats.n)} label="Total sessions" sub="all time" />
-              <StatCard val={`${stats.avg}m`} label="Avg length" sub="per session" />
-              <StatCard val={String(stats.week)} label="This week" sub="sessions" />
-              <StatCard val={`${stats.cardioMin}m`} label="Cardio" sub="total minutes" />
-            </View>
-
-            {/* progress vs previous period */}
-            <View style={{ backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 20, padding: 18 }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                <Text style={{ fontSize: 17, color: colors.text, fontFamily: fonts.uiSemi }}>Progress</Text>
-                <Text style={{ fontSize: 11.5, color: colors.textFaint, fontFamily: fonts.uiSemi }}>last {progressDays}d vs prior {progressDays}d</Text>
-              </View>
-              <Text style={{ fontSize: 11.5, color: colors.textFainter, fontFamily: fonts.ui, marginBottom: 14 }}>
-                Are you training more than the period before?
-              </Text>
-              <View style={{ gap: 10 }}>
-                <ProgressStat label="Sessions" cur={progress.cur.sessions} prev={progress.prev.sessions} />
-                <ProgressStat label="Time" cur={progress.cur.minutes} prev={progress.prev.minutes} unit="m" />
-                <ProgressStat label="Cardio" cur={progress.cur.cardio} prev={progress.prev.cardio} unit="m" />
-                {(weightProgress.cur > 0 || weightProgress.prev > 0) && (
-                  <ProgressStat label="Body weight" cur={weightProgress.cur} prev={weightProgress.prev} unit="kg" />
-                )}
-              </View>
-
-              {exerciseProgress.tracked > 0 && (
-                <Pressable
-                  onPress={() => setExerciseSheet(true)}
-                  style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: colors.borderSoft }}
-                >
-                  <View>
-                    <Text style={{ fontSize: 14, color: colors.textSoft, fontFamily: fonts.uiSemi }}>Exercises improved</Text>
-                    <Text style={{ fontSize: 11.5, color: colors.textFaint, fontFamily: fonts.ui, marginTop: 2 }}>tap for the breakdown</Text>
-                  </View>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={{ color: colors.green, fontFamily: fonts.monoSemi, fontSize: 17 }}>
-                      {exerciseProgress.improved}<Text style={{ color: colors.textFainter, fontSize: 13 }}> / {exerciseProgress.tracked}</Text>
-                    </Text>
-                    <Icon name="chevron" size={16} color={colors.textFaint} />
-                  </View>
-                </Pressable>
-              )}
-            </View>
-
-            {/* duration chart */}
-            <View style={{ backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 20, padding: 18 }}>
-              <Text style={{ fontSize: 12, color: colors.textFainter, fontFamily: fonts.uiSemi, letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 16 }}>Session length</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 8, height: 108 }}>
-                {bars.map((b, i) => (
-                  <View key={i} style={{ flex: 1, alignItems: 'center', gap: 7, height: '100%', justifyContent: 'flex-end' }}>
-                    <Text style={{ fontFamily: fonts.mono, fontSize: 10, color: colors.textDim }}>{b.min}m</Text>
-                    <View style={{ width: '100%', maxWidth: 30, borderTopLeftRadius: 7, borderTopRightRadius: 7, borderBottomLeftRadius: 3, borderBottomRightRadius: 3, backgroundColor: accent, height: `${b.h}%` }} />
-                    <Text style={{ fontSize: 10, color: colors.textFainter, fontFamily: fonts.uiSemi }}>{b.label}</Text>
-                  </View>
-                ))}
-              </View>
-            </View>
-
-            {/* body weight */}
-            <View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <Text style={{ fontSize: 17, color: colors.text, fontFamily: fonts.uiSemi }}>Body weight</Text>
-                <Pressable onPress={() => setWeightSheet(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: accent, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7 }}>
-                  <Icon name="plus" size={14} color="#fff" />
-                  <Text style={{ color: '#fff', fontFamily: fonts.uiSemi, fontSize: 12.5 }}>Log</Text>
-                </Pressable>
-              </View>
-
-              {weights.length === 0 ? (
-                <Text style={{ color: colors.textFainter, fontFamily: fonts.ui, textAlign: 'center', paddingVertical: 16 }}>
-                  Log your weight every day or two to track the trend.
-                </Text>
-              ) : (
-                <View style={{ gap: 8 }}>
-                  {/* latest big number */}
-                  <View style={{ backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 16, padding: 16, flexDirection: 'row', alignItems: 'flex-end', gap: 8 }}>
-                    <Text style={{ fontFamily: fonts.monoSemi, fontSize: 30, color: colors.text }}>{weights[0].kg}</Text>
-                    <Text style={{ fontFamily: fonts.uiSemi, fontSize: 14, color: colors.textMuted, marginBottom: 5 }}>kg</Text>
-                    <Text style={{ flex: 1, textAlign: 'right', fontFamily: fonts.ui, fontSize: 12, color: colors.textDim, marginBottom: 5 }}>latest · {fmtDay(weights[0].date)}</Text>
-                  </View>
-                  {/* measurement list with deltas */}
-                  {weights.map((w, i) => {
-                    const prev = weights[i + 1];
-                    const delta = prev ? Math.round((w.kg - prev.kg) * 10) / 10 : 0;
-                    return (
-                      <Pressable
-                        key={w.id}
-                        onLongPress={() =>
-                          confirm({ title: 'Delete entry?', message: `${w.kg} kg · ${fmtDay(w.date)}`, confirmText: 'Delete', destructive: true }).then((ok) => {
-                            if (ok) weightApi.remove(w.id);
-                          })
-                        }
-                        style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 13, paddingHorizontal: 14, paddingVertical: 11 }}
-                      >
-                        <Text style={{ flex: 1, fontFamily: fonts.ui, fontSize: 13, color: colors.textMuted }}>{fmtDay(w.date)}</Text>
-                        <Text style={{ fontFamily: fonts.monoSemi, fontSize: 15, color: colors.textMid }}>{w.kg} kg</Text>
-                        {prev && (
-                          <Text style={{ width: 56, textAlign: 'right', fontFamily: fonts.mono, fontSize: 12, color: delta > 0 ? colors.red : delta < 0 ? colors.green : colors.textFaint }}>
-                            {delta > 0 ? `+${delta}` : delta < 0 ? `${delta}` : '—'}
-                          </Text>
-                        )}
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              )}
-            </View>
-
-            {/* history */}
-            <View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <Text style={{ fontSize: 17, color: colors.text, fontFamily: fonts.uiSemi }}>History</Text>
-                <Text style={{ fontSize: 13, color: colors.textDim, fontFamily: fonts.mono }}>{log.length} logged</Text>
-              </View>
-              <Text style={{ fontSize: 11.5, color: colors.textFainter, fontFamily: fonts.ui, marginBottom: 10, marginTop: -4 }}>
-                Long-press a session to delete it.
-              </Text>
-              <View style={{ gap: 9 }}>
-                {log.map((lg) => (
-                  <Pressable
-                    key={lg.id}
-                    onLongPress={() =>
-                      confirm({ title: 'Delete session?', message: `${lg.day} · ${lg.date}`, confirmText: 'Delete', destructive: true }).then((ok) => {
-                        if (ok) gym.deleteSession(lg.id);
-                      })
-                    }
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 13, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 16, padding: 14 }}
-                  >
-                    <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: withAlpha(accent, 13), alignItems: 'center', justifyContent: 'center' }}>
-                      <Icon name="gym" size={19} color={accent} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <Text style={{ fontSize: 15, color: colors.textMid, fontFamily: fonts.uiSemi }}>{lg.day}</Text>
-                        <Text style={{ fontSize: 11, color: colors.textFaint, fontFamily: fonts.ui }}>{lg.program}</Text>
-                      </View>
-                      <View style={{ flexDirection: 'row', gap: 12, marginTop: 4, flexWrap: 'wrap' }}>
-                        <Text style={{ fontSize: 12, color: colors.textMuted, fontFamily: fonts.ui }}>{Math.round(lg.durationSec / 60)} min</Text>
-                        <Text style={{ fontSize: 12, color: lg.cardio ? colors.green : colors.textFaint, fontFamily: fonts.ui }}>
-                          {lg.cardio ? `♥ ${lg.cardioMin} min cardio` : 'no cardio'}
-                        </Text>
-                      </View>
-                    </View>
-                    <Text style={{ fontSize: 11.5, color: colors.textFainter, fontFamily: fonts.mono }}>{lg.date}</Text>
-                  </Pressable>
-                ))}
-                {log.length === 0 && (
-                  <Text style={{ color: colors.textFainter, fontFamily: fonts.ui, textAlign: 'center', paddingVertical: 24 }}>
-                    No sessions yet. Finish a workout to log one.
-                  </Text>
-                )}
-              </View>
-            </View>
-          </>
+          <GymLog accent={accent} />
         )}
       </ScrollView>
 
@@ -872,43 +720,6 @@ export default function Gym() {
         onSave={saveProgram}
       />
 
-      <WeightSheet
-        visible={weightSheet}
-        suggested={weights[0]?.kg}
-        onClose={() => setWeightSheet(false)}
-        onSave={(kg) => weightApi.add(TODAY, kg)}
-      />
-
-      <Sheet
-        visible={exerciseSheet}
-        onClose={() => setExerciseSheet(false)}
-        title="Exercises improved"
-        subtitle={`Best weight this ${progressDays}d vs the ${progressDays}d before`}
-      >
-        <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
-          <View style={{ gap: 8 }}>
-            {exerciseProgress.rows.map((r) => {
-              const better = r.prev > 0 && r.cur > r.prev;
-              const worse = r.prev > 0 && r.cur > 0 && r.cur < r.prev;
-              const isNew = r.prev === 0 && r.cur > 0;
-              const col = better ? colors.green : worse ? colors.red : colors.textFaint;
-              const arrow = better ? '▲' : worse ? '▼' : '—';
-              return (
-                <View key={r.name} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 13, paddingHorizontal: 14, paddingVertical: 12 }}>
-                  <Text style={{ flex: 1, color: colors.textMid, fontFamily: fonts.uiSemi, fontSize: 13.5 }}>{r.name}</Text>
-                  <Text style={{ color: colors.text, fontFamily: fonts.monoSemi, fontSize: 14 }}>
-                    {r.cur > 0 ? `${r.cur}kg` : '—'} <Text style={{ color: colors.textFainter, fontSize: 11.5 }}>/ {r.prev > 0 ? `${r.prev}kg` : '—'}</Text>
-                  </Text>
-                  <Text style={{ color: col, fontFamily: fonts.uiBold, fontSize: 12, marginLeft: 10, width: 36, textAlign: 'right' }}>
-                    {isNew ? 'new' : arrow}
-                  </Text>
-                </View>
-              );
-            })}
-          </View>
-        </ScrollView>
-      </Sheet>
-
     </SafeAreaView>
   );
 }
@@ -918,11 +729,15 @@ function SetTracker({
   accent,
   onToggle,
   onEdit,
+  onAdd,
+  onRemove,
 }: {
   sets: LiveSet[];
   accent: string;
   onToggle: (i: number) => void;
   onEdit: (i: number, field: 'reps' | 'weight', val: number) => void;
+  onAdd: () => void;
+  onRemove: (i: number) => void;
 }) {
   return (
     <View style={{ gap: 7 }}>
@@ -933,11 +748,13 @@ function SetTracker({
         <View style={{ width: 38 }} />
       </View>
       {sets.map((s, i) => (
-        <View key={i} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: s.done ? withAlpha(accent, 14) : colors.inset, borderRadius: 11, paddingVertical: 6, paddingHorizontal: 4 }}>
-          <Text style={{ width: 30, textAlign: 'center', color: colors.textMuted, fontFamily: fonts.monoSemi, fontSize: 13 }}>{i + 1}</Text>
+        <View key={`${sets.length}-${i}`} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: s.done ? withAlpha(accent, 14) : colors.inset, borderRadius: 11, paddingVertical: 6, paddingHorizontal: 4 }}>
+          <Pressable onLongPress={() => sets.length > 1 && onRemove(i)} hitSlop={6} style={{ width: 30, alignItems: 'center' }}>
+            <Text style={{ color: colors.textMuted, fontFamily: fonts.monoSemi, fontSize: 13 }}>{i + 1}</Text>
+          </Pressable>
           <TextInput
             defaultValue={String(s.weight)}
-            onChangeText={(v) => onEdit(i, 'weight', parseFloat(v) || 0)}
+            onChangeText={(v) => onEdit(i, 'weight', parseFloat(v.replace(',', '.')) || 0)}
             keyboardType="decimal-pad"
             style={{ flex: 1, textAlign: 'center', color: colors.text, fontFamily: fonts.monoSemi, fontSize: 15, paddingVertical: 4 }}
           />
@@ -958,6 +775,10 @@ function SetTracker({
           </Pressable>
         </View>
       ))}
+      <Pressable onPress={onAdd} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 9, borderRadius: 11, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.borderSoft }}>
+        <Icon name="plus" size={12} color={colors.textMuted} />
+        <Text style={{ color: colors.textMuted, fontFamily: fonts.uiSemi, fontSize: 12.5 }}>Add set</Text>
+      </Pressable>
     </View>
   );
 }
@@ -993,16 +814,6 @@ function Stat({ label, value, color, flex = 1 }: { label: string; value: string;
     <View style={{ flex, backgroundColor: colors.inset, borderRadius: 10, paddingVertical: 9, alignItems: 'center' }}>
       <Text style={{ fontFamily: fonts.monoSemi, fontSize: 16, color: color ?? '#e9e9ef' }}>{value}</Text>
       <Text style={{ fontSize: 10, color: colors.textFainter, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 2 }}>{label}</Text>
-    </View>
-  );
-}
-
-function StatCard({ val, label, sub }: { val: string; label: string; sub: string }) {
-  return (
-    <View style={{ width: '47%', flexGrow: 1, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 18, padding: 16 }}>
-      <Text style={{ fontFamily: fonts.monoSemi, fontSize: 27, color: colors.textMid }}>{val}</Text>
-      <Text style={{ fontSize: 13.5, color: colors.textSoft, fontFamily: fonts.uiSemi, marginTop: 8 }}>{label}</Text>
-      <Text style={{ fontSize: 11.5, color: colors.textFaint, fontFamily: fonts.ui, marginTop: 1 }}>{sub}</Text>
     </View>
   );
 }

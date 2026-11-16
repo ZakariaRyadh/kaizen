@@ -1,29 +1,22 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { confirm } from '../../components/Dialog';
+import { confirm, toast } from '../../components/Dialog';
 import { Icon } from '../../components/Icon';
 import { EditSessionSheet, IdeaSheet, NewSubjectsSheet, SubjectDetailSheet, SubjectSheet, SummarySheet } from '../../components/LearnSheets';
-import { ProgressStat } from '../../components/ProgressStat';
+import { LearnLog } from '../../components/LearnLog';
 import { useRefresh } from '../../hooks/useRefresh';
 import { LearnSession, Subject, useLearning } from '../../store/learning';
 import { useSettings } from '../../store/settings';
-import { todayIso, useToday } from '../../store/today';
+import { loadLive, saveLive } from '../../lib/liveSession';
+import { useToday } from '../../store/today';
 import { useAccent, withAlpha } from '../../theme/AccentContext';
 import { colors, fonts } from '../../theme/colors';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const clock = (s: number) => `${pad(Math.floor(s / 3600))}:${pad(Math.floor((s % 3600) / 60))}:${pad(s % 60)}`;
-const hrs = (s: number) => {
-  const h = s / 3600;
-  return h >= 1 ? `${h.toFixed(1)}h` : `${Math.round(s / 60)}m`;
-};
-const fmtDay = (iso: string) =>
-  new Date(iso).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-const daysAgo = (iso: string) => Math.round((new Date(todayIso()).getTime() - new Date(iso).getTime()) / 86400000);
-
 function Segment({ options, value, onChange, accent }: { options: { k: string; label: string }[]; value: string; onChange: (k: string) => void; accent: string }) {
   return (
     <View style={{ flexDirection: 'row', gap: 3, backgroundColor: '#131319', borderWidth: 1, borderColor: colors.border, borderRadius: 11, padding: 3 }}>
@@ -85,6 +78,35 @@ export default function Learn() {
 
   const currentSubject = subjects.find((s) => s.id === subjectId);
 
+  // ---- keep a study session in progress if the app is closed ----
+  type Snap = { start: number | null; elapsed: number; paused: boolean; subjectId: string | null; goal: string; activeId: string | null };
+  const restored = useRef(false);
+  useEffect(() => {
+    if (restored.current) return;
+    restored.current = true;
+    loadLive<Snap>('learn:live').then((snap) => {
+      if (!snap) return;
+      setSubjectId(snap.subjectId);
+      setGoal(snap.goal);
+      setActiveId(snap.activeId);
+      startRef.current = snap.start;
+      setElapsed(snap.start !== null ? Math.floor((Date.now() - snap.start) / 1000) : snap.elapsed);
+      setPaused(snap.paused);
+      setRunning(true);
+      setView('train');
+      toast('Study session in progress restored', 'info');
+    });
+  }, []);
+  useEffect(() => {
+    if (!restored.current) return;
+    if (!running) {
+      saveLive('learn:live', null);
+      return;
+    }
+    saveLive<Snap>('learn:live', { start: startRef.current, elapsed, paused, subjectId, goal, activeId });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [running, paused, subjectId, goal, activeId]);
+
   const start = () => {
     startRef.current = Date.now();
     setElapsed(0);
@@ -117,10 +139,27 @@ export default function Learn() {
     startRef.current = null;
     setRunning(false);
     setPaused(false);
+    pendingSave.current = true;
     setSummarySheet(true);
   };
 
+  // closing the summary sheet any way other than Discard still saves the time
+  const pendingSave = useRef(false);
+  const closeSummary = () => {
+    setSummarySheet(false);
+    if (pendingSave.current) saveSummary('');
+  };
+  const discardSession = () => {
+    pendingSave.current = false;
+    setSummarySheet(false);
+    setActiveId(null);
+    setElapsed(0);
+    toast('Session discarded', 'info');
+  };
+
   const saveSummary = (summary: string) => {
+    if (!pendingSave.current) return;
+    pendingSave.current = false;
     const subjectName = currentSubject?.name ?? 'General';
     if (activeId) {
       learning.updateSession(activeId, { durationSec: elapsed, summary, done: true, date: TODAY, goal });
@@ -133,6 +172,7 @@ export default function Learn() {
     setGoal('');
     setElapsed(0);
     setView('log');
+    toast(`Saved · ${Math.max(1, Math.round(elapsed / 60))} min of ${subjectName}`);
   };
 
   const saveIdea = (g: string) => {
@@ -140,54 +180,8 @@ export default function Learn() {
     learning.addSession({ subjectId, subjectName, date: TODAY, durationSec: 0, goal: g, summary: '', done: false });
   };
 
-  const done = sessions.filter((s) => s.done);
   const planned = sessions.filter((s) => !s.done);
-
-  const totalSec = useMemo(() => done.reduce((sum, s) => sum + s.durationSec, 0), [done]);
-
-  const streak = useMemo(() => {
-    const days = new Set(done.map((s) => daysAgo(s.date)));
-    let n = 0;
-    let d = days.has(0) ? 0 : 1;
-    while (days.has(d)) {
-      n++;
-      d++;
-    }
-    return n;
-  }, [done]);
-
-  // this-period vs previous-period (window from Settings)
   const progressDays = useSettings((s) => s.progressDays);
-  const progress = useMemo(() => {
-    const win = (lo: number, hi: number) => {
-      const rows = done.filter((s) => { const a = daysAgo(s.date); return a >= lo && a < hi; });
-      return { sessions: rows.length, minutes: Math.round(rows.reduce((sum, s) => sum + s.durationSec, 0) / 60) };
-    };
-    return { cur: win(0, progressDays), prev: win(progressDays, progressDays * 2) };
-  }, [done, progressDays]);
-
-  // new subjects picked up this period vs the period before
-  const newSubjects = useMemo(() => {
-    const daysAgoNow = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
-    const win = (lo: number, hi: number) => subjects.filter((s) => { const a = daysAgoNow(s.createdAt); return a >= lo && a < hi; }).length;
-    return { cur: win(0, progressDays), prev: win(progressDays, progressDays * 2) };
-  }, [subjects, progressDays]);
-
-  const bySubject = useMemo(() => {
-    const map = new Map<string, { id: string | null; name: string; color: string; sec: number }>();
-    for (const s of done) {
-      const key = s.subjectId ?? s.subjectName;
-      const subj = subjects.find((x) => x.id === s.subjectId);
-      const prev = map.get(key);
-      map.set(key, {
-        id: s.subjectId,
-        name: s.subjectName || 'General',
-        color: subj?.color ?? accent,
-        sec: (prev?.sec ?? 0) + s.durationSec,
-      });
-    }
-    return [...map.values()].sort((a, b) => b.sec - a.sec);
-  }, [done, subjects, accent]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.canvas }} edges={['top']}>
@@ -329,111 +323,31 @@ export default function Learn() {
             )}
           </>
         ) : (
-          <>
-            {/* stats */}
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              <View style={{ flex: 1, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 16, padding: 14 }}>
-                <Text style={{ color: colors.textFaint, fontFamily: fonts.uiSemi, fontSize: 11 }}>TOTAL TIME</Text>
-                <Text style={{ color: colors.text, fontFamily: fonts.monoSemi, fontSize: 22, marginTop: 4 }}>{hrs(totalSec)}</Text>
-              </View>
-              <View style={{ flex: 1, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 16, padding: 14 }}>
-                <Text style={{ color: colors.textFaint, fontFamily: fonts.uiSemi, fontSize: 11 }}>SESSIONS</Text>
-                <Text style={{ color: colors.text, fontFamily: fonts.monoSemi, fontSize: 22, marginTop: 4 }}>{done.length}</Text>
-              </View>
-              <View style={{ flex: 1, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 16, padding: 14 }}>
-                <Text style={{ color: colors.textFaint, fontFamily: fonts.uiSemi, fontSize: 11 }}>STREAK</Text>
-                <Text style={{ color: colors.text, fontFamily: fonts.monoSemi, fontSize: 22, marginTop: 4 }}>{streak}d</Text>
-              </View>
-            </View>
-
-            {/* progress vs previous period */}
-            <View style={{ backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 20, padding: 18 }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                <Text style={{ fontSize: 17, color: colors.text, fontFamily: fonts.uiSemi }}>Progress</Text>
-                <Text style={{ fontSize: 11.5, color: colors.textFaint, fontFamily: fonts.uiSemi }}>last {progressDays}d vs prior {progressDays}d</Text>
-              </View>
-              <Text style={{ fontSize: 11.5, color: colors.textFainter, fontFamily: fonts.ui, marginBottom: 14 }}>
-                Are you learning more than the period before?
-              </Text>
-              <View style={{ gap: 10 }}>
-                <ProgressStat label="Study time" cur={progress.cur.minutes} prev={progress.prev.minutes} unit="m" />
-                <ProgressStat label="Sessions" cur={progress.cur.sessions} prev={progress.prev.sessions} />
-                <Pressable onPress={() => setNewSubjectsSheet(true)}>
-                  <ProgressStat label="New subjects" cur={newSubjects.cur} prev={newSubjects.prev} />
-                </Pressable>
-              </View>
-            </View>
-
-            {/* per-subject totals */}
-            {bySubject.length > 0 && (
-              <View>
-                <Text style={{ fontSize: 17, color: colors.text, fontFamily: fonts.uiSemi, marginBottom: 10 }}>By subject</Text>
-                <View style={{ gap: 8 }}>
-                  {bySubject.map((b) => {
-                    const subj = b.id ? subjects.find((x) => x.id === b.id) : null;
-                    return (
-                      <Pressable
-                        key={b.name}
-                        onPress={() => subj && setDetailSubject(subj)}
-                        style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 14, padding: 14 }}
-                      >
-                        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: b.color }} />
-                        <Text style={{ flex: 1, color: colors.text, fontFamily: fonts.uiSemi, fontSize: 14 }}>{b.name}</Text>
-                        <Text style={{ color: colors.textMuted, fontFamily: fonts.monoSemi, fontSize: 14 }}>{hrs(b.sec)}</Text>
-                        {subj && <Icon name="chevron" size={15} color={colors.textFaint} />}
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </View>
-            )}
-
-            {/* history */}
-            <View>
-              <Text style={{ fontSize: 17, color: colors.text, fontFamily: fonts.uiSemi, marginBottom: 4 }}>History</Text>
-              <Text style={{ fontSize: 11.5, color: colors.textFainter, fontFamily: fonts.ui, marginBottom: 10 }}>
-                Tap to edit · long-press to delete.
-              </Text>
-              <View style={{ gap: 9 }}>
-                {done.map((s) => (
-                  <Pressable
-                    key={s.id}
-                    onPress={() => setEditSession(s)}
-                    onLongPress={() =>
-                      confirm({ title: 'Delete entry?', message: `${s.subjectName} · ${fmtDay(s.date)}`, confirmText: 'Delete', destructive: true }).then((ok) => {
-                        if (ok) learning.deleteSession(s.id);
-                      })
-                    }
-                    style={{ backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 16, padding: 14, gap: 6 }}
-                  >
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Text style={{ color: colors.text, fontFamily: fonts.uiSemi, fontSize: 14 }}>{s.subjectName || 'General'}</Text>
-                      <Text style={{ color: colors.textMuted, fontFamily: fonts.monoSemi, fontSize: 13 }}>{hrs(s.durationSec)} · {fmtDay(s.date)}</Text>
-                    </View>
-                    {s.goal && <Text style={{ color: colors.textDim, fontFamily: fonts.ui, fontSize: 12.5 }} numberOfLines={1}>Goal: {s.goal}</Text>}
-                    {s.summary && <Text style={{ color: colors.textSoft, fontFamily: fonts.ui, fontSize: 13 }}>{s.summary}</Text>}
-                  </Pressable>
-                ))}
-                {done.length === 0 && (
-                  <Text style={{ color: colors.textFaint, fontFamily: fonts.ui, fontSize: 13 }}>
-                    No sessions yet. Start a timer to log one.
-                  </Text>
-                )}
-              </View>
-            </View>
-          </>
+          <LearnLog
+            accent={accent}
+            onEdit={setEditSession}
+            onAdd={() => setEditSession({ id: 'new', subjectId, subjectName: '', date: TODAY, durationSec: 0, goal: '', summary: '', done: true })}
+            onOpenSubject={setDetailSubject}
+            onOpenNewSubjects={() => setNewSubjectsSheet(true)}
+          />
         )}
       </ScrollView>
 
       <SubjectSheet visible={subjectSheet} onClose={() => setSubjectSheet(false)} onSave={(name, color) => learning.addSubject(name, color).then((s) => s && setSubjectId(s.id))} />
       <IdeaSheet visible={ideaSheet} onClose={() => setIdeaSheet(false)} onSave={saveIdea} />
-      <SummarySheet visible={summarySheet} durationLabel={clock(elapsed)} onClose={() => setSummarySheet(false)} onSave={saveSummary} />
+      <SummarySheet visible={summarySheet} durationLabel={clock(elapsed)} onClose={closeSummary} onSave={saveSummary} onDiscard={discardSession} />
       <EditSessionSheet
         visible={!!editSession}
         session={editSession}
         subjects={subjects}
         onClose={() => setEditSession(null)}
-        onSave={(patch) => editSession && learning.updateSession(editSession.id, patch)}
+        onSave={(patch) => {
+          if (!editSession) return;
+          if (editSession.id === 'new') {
+            learning.addSession({ ...editSession, ...patch, done: true } as Omit<LearnSession, 'id'>);
+            toast('Session added to your log');
+          } else learning.updateSession(editSession.id, patch);
+        }}
         onDelete={() => editSession && learning.deleteSession(editSession.id)}
       />
       <SubjectDetailSheet
