@@ -6,7 +6,7 @@ import { colors, fonts } from '../theme/colors';
 import { Subtask } from '../theme/tags';
 
 // smooth slide when a ticked subtask moves to the bottom
-export const SUBTASK_MOVE = LinearTransition.springify().damping(20).stiffness(180);
+export const SUBTASK_MOVE = LinearTransition.duration(180);
 
 // Small checklist under a task row (Home + Calendar): the box ticks the
 // subtask; the rest of the row opens the task.
