@@ -368,7 +368,7 @@ function TaskRow({
         </Pressable>
       )}
     </View>
-    <SubtaskList items={item.subtasks} accent={accent} onToggle={(sid) => onToggleSub(item.id, sid)} />
+    <SubtaskList items={item.subtasks} accent={accent} onToggle={(sid) => onToggleSub(item.id, sid)} onOpen={() => onEdit(item)} />
     </View>
   );
 }

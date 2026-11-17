@@ -253,7 +253,7 @@ export default function Calendar() {
                 </Pressable>
                 {!!t.tag && <Text style={{ fontSize: 11, fontFamily: fonts.uiSemi, color: t.tagColor, backgroundColor: withAlpha(t.tagColor, 14), paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8, overflow: 'hidden' }}>{t.tag}</Text>}
               </View>
-              <SubtaskList items={t.subtasks} accent={accent} onToggle={(sid) => taskStore.toggleSubtask(t.id, sid)} />
+              <SubtaskList items={t.subtasks} accent={accent} onToggle={(sid) => taskStore.toggleSubtask(t.id, sid)} onOpen={() => openEditTask(t)} />
               </View>
             ))}
             {dayTasks.length === 0 && (

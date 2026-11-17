@@ -21,7 +21,6 @@ const fmtMin = (sec: number) => {
   const m = Math.round(sec / 60);
   return m >= 60 ? `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m` : `${m}m`;
 };
-const fmtVol = (kg: number) => (kg >= 1000 ? `${(kg / 1000).toFixed(1)}t` : `${Math.round(kg)}kg`);
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
 // one workout's sets of one exercise, summarised
@@ -111,7 +110,6 @@ export function GymLog({ accent }: { accent: string }) {
         sessions: rows.length,
         minutes: Math.round(rows.reduce((s, x) => s + x.durationSec, 0) / 60),
         cardio: rows.reduce((s, x) => s + x.cardioMin, 0),
-        volume: Math.round(rows.reduce((s, x) => s + x.volume, 0)),
       };
     };
     return { cur: win(0, progressDays), prev: win(progressDays, progressDays * 2) };
@@ -178,9 +176,9 @@ export function GymLog({ accent }: { accent: string }) {
       <Card>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
           <Text style={h2}>Consistency</Text>
-          <Text style={{ color: grid.streak ? accent : colors.textFaint, fontFamily: fonts.uiSemi, fontSize: 12 }}>
-            {grid.streak ? `🔥 ${grid.streak}-week streak` : 'Train this week to start a streak'}
-          </Text>
+          {grid.streak > 0 && (
+            <Text style={{ color: accent, fontFamily: fonts.uiSemi, fontSize: 12 }}>🔥 {grid.streak}-week streak</Text>
+          )}
         </View>
         <View style={{ flexDirection: 'row', marginBottom: 6 }}>
           {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
@@ -220,7 +218,6 @@ export function GymLog({ accent }: { accent: string }) {
         <View style={{ gap: 10 }}>
           <ProgressStat label="Workouts" cur={progress.cur.sessions} prev={progress.prev.sessions} />
           <ProgressStat label="Time" cur={progress.cur.minutes} prev={progress.prev.minutes} unit="m" />
-          <ProgressStat label="Volume" cur={Math.round(progress.cur.volume / 100) / 10} prev={Math.round(progress.prev.volume / 100) / 10} unit="t" />
           <ProgressStat label="Cardio" cur={progress.cur.cardio} prev={progress.prev.cardio} unit="m" />
         </View>
         {exercises.rows.length > 0 && (
@@ -353,7 +350,7 @@ export function GymLog({ accent }: { accent: string }) {
                     {prs > 0 && <Text style={{ fontSize: 10.5, color: colors.amber, fontFamily: fonts.uiBold }}>★ {prs} PR</Text>}
                   </View>
                   <Text style={{ fontSize: 12, color: colors.textMuted, fontFamily: fonts.ui, marginTop: 3 }} numberOfLines={1}>
-                    {[fmtMin(lg.durationSec), sets.length ? `${sets.length} sets` : '', lg.volume ? fmtVol(lg.volume) : '', lg.cardio ? `♥ ${lg.cardioMin}m` : ''].filter(Boolean).join('  ·  ')}
+                    {[fmtMin(lg.durationSec), sets.length ? `${sets.length} sets` : '', lg.cardio ? `♥ ${lg.cardioMin}m` : ''].filter(Boolean).join('  ·  ')}
                   </Text>
                 </View>
                 <Text style={{ fontSize: 11.5, color: colors.textFainter, fontFamily: fonts.mono }}>{lg.date}</Text>
@@ -379,7 +376,6 @@ export function GymLog({ accent }: { accent: string }) {
             </Text>
             <View style={{ flexDirection: 'row', gap: 8, marginTop: 16, marginBottom: 18 }}>
               <Mini label="Time" value={fmtMin(openSession.durationSec)} />
-              <Mini label="Volume" value={openSession.volume ? fmtVol(openSession.volume) : '—'} />
               <Mini label="Sets" value={String(sessionSets.length || '—')} />
               <Mini label="Cardio" value={openSession.cardio ? `${openSession.cardioMin}m` : '—'} color={openSession.cardio ? colors.green : undefined} />
             </View>

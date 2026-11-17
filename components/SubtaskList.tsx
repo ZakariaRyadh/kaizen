@@ -1,29 +1,37 @@
 import { Pressable, Text, View } from 'react-native';
+import Animated, { LinearTransition } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
 
 import { colors, fonts } from '../theme/colors';
 import { Subtask } from '../theme/tags';
 
-// Small tickable checklist shown under a task row (Home + Calendar).
-export function SubtaskList({ items, accent, onToggle }: { items: Subtask[]; accent: string; onToggle: (id: string) => void }) {
+// smooth slide when a ticked subtask moves to the bottom
+export const SUBTASK_MOVE = LinearTransition.springify().damping(20).stiffness(180);
+
+// Small checklist under a task row (Home + Calendar): the box ticks the
+// subtask; the rest of the row opens the task.
+export function SubtaskList({ items, accent, onToggle, onOpen }: { items: Subtask[]; accent: string; onToggle: (id: string) => void; onOpen?: () => void }) {
   if (!items.length) return null;
   return (
     <View style={{ gap: 7, marginTop: 10, paddingLeft: 33 }}>
       {doneLast(items).map((st) => (
-        <Pressable key={st.id} onPress={() => onToggle(st.id)} hitSlop={4} style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
-          <Check done={st.done} accent={accent} size={17} />
-          <Text
-            style={{
-              flex: 1,
-              fontSize: 13.5,
-              color: st.done ? colors.textFaint : colors.textSoft,
-              fontFamily: fonts.ui,
-              textDecorationLine: st.done ? 'line-through' : 'none',
-            }}
-          >
-            {st.title}
-          </Text>
-        </Pressable>
+        <Animated.View key={st.id} layout={SUBTASK_MOVE} style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+          <Pressable onPress={() => onToggle(st.id)} hitSlop={8}>
+            <Check done={st.done} accent={accent} size={17} />
+          </Pressable>
+          <Pressable onPress={onOpen} disabled={!onOpen} style={{ flex: 1, paddingVertical: 2 }}>
+            <Text
+              style={{
+                fontSize: 13.5,
+                color: st.done ? colors.textFaint : colors.textSoft,
+                fontFamily: fonts.ui,
+                textDecorationLine: st.done ? 'line-through' : 'none',
+              }}
+            >
+              {st.title}
+            </Text>
+          </Pressable>
+        </Animated.View>
       ))}
     </View>
   );

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
+import Animated from 'react-native-reanimated';
 
-import { Check, doneLast } from './SubtaskList';
+import { Check, doneLast, SUBTASK_MOVE } from './SubtaskList';
 import { TagPicker } from './TagPicker';
 import { TimePicker } from './TimePicker';
 import { ALL_DAY, fmtRange, span } from '../lib/time';
@@ -107,7 +108,7 @@ export function TaskSheet({ visible, initial, defaultDate, onClose, onSave, onDe
             <Field label="Subtasks">
               <View style={{ gap: 8 }}>
                 {doneLast(subtasks).map((st) => (
-                  <View key={st.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Animated.View key={st.id} layout={SUBTASK_MOVE} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                     <Pressable onPress={() => editSub(st.id, { done: !st.done })} hitSlop={6}>
                       <Check done={st.done} accent={accent} size={20} />
                     </Pressable>
@@ -120,7 +121,7 @@ export function TaskSheet({ visible, initial, defaultDate, onClose, onSave, onDe
                     <Pressable onPress={() => removeSub(st.id)} hitSlop={6} style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: 'rgba(239,68,68,0.14)', alignItems: 'center', justifyContent: 'center' }}>
                       <Text style={{ color: colors.red, fontSize: 16, lineHeight: 18 }}>×</Text>
                     </Pressable>
-                  </View>
+                  </Animated.View>
                 ))}
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                   <TextInput
