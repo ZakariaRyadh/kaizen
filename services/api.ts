@@ -80,8 +80,8 @@ export async function apiLogin(email: string, password: string) {
   return data;
 }
 
-export async function apiRegister(email: string, password: string, display_name: string) {
-  await request('POST', '/auth/register/', { email, password, display_name }, false);
+export async function apiRegister(email: string, password: string, display_name: string, invite_code: string) {
+  await request('POST', '/auth/register/', { email, password, display_name, invite_code }, false);
   return apiLogin(email, password); // auto-login after register
 }
 

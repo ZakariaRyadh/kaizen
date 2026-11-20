@@ -13,18 +13,23 @@ export default function Register() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [invite, setInvite] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const submit = async () => {
     setLocalError(null);
+    if (!invite.trim()) {
+      setLocalError('Kaizen is invite-only. Enter the invite code you were given.');
+      return;
+    }
     if (password.length < 8) {
       setLocalError('Password must be at least 8 characters.');
       return;
     }
     setLoading(true);
     try {
-      await register(email.trim(), password, name.trim());
+      await register(email.trim(), password, name.trim(), invite.trim());
       router.replace('/');
     } catch {
       /* store error */
@@ -38,6 +43,7 @@ export default function Register() {
       <AuthField label="Name" icon="mail" value={name} onChangeText={setName} placeholder="Your name" />
       <AuthField label="Email" icon="mail" value={email} onChangeText={setEmail} placeholder="you@example.com" keyboardType="email-address" />
       <AuthField label="Password" icon="lock" value={password} onChangeText={setPassword} placeholder="At least 8 characters" secure />
+      <AuthField label="Invite code" icon="keypad" value={invite} onChangeText={(t) => setInvite(t.toUpperCase())} placeholder="KZN-XXXX-XXXX" maxLength={20} letterSpacing={1} />
       <AuthError message={localError ?? error} />
       <AuthButton label="Create account" onPress={submit} loading={loading} />
 

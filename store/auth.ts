@@ -30,7 +30,7 @@ type AuthState = {
   error: string | null;
   checkAuth: () => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, displayName: string) => Promise<void>;
+  register: (email: string, password: string, displayName: string, inviteCode: string) => Promise<void>;
   logout: () => Promise<void>;
   updateName: (displayName: string) => Promise<void>;
   setAvatar: (dataUri: string) => Promise<void>;
@@ -68,10 +68,10 @@ export const useAuth = create<AuthState>((set) => ({
     }
   },
 
-  register: async (email, password, displayName) => {
+  register: async (email, password, displayName, inviteCode) => {
     set({ error: null });
     try {
-      const data = await apiRegister(email, password, displayName);
+      const data = await apiRegister(email, password, displayName, inviteCode);
       set({ isLoggedIn: true, user: data.user ?? null });
     } catch (e: any) {
       set({ error: errorMessage(e, 'Could not create account.') });
